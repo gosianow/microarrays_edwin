@@ -4,6 +4,10 @@
 
 # DE analysis of Affymetrix Mouse Gene 2.0 ST arrays (pd.mogene.2.0.st)
 
+# Update 9 Mar 2015 
+# - find Ensebl IDs
+
+
 ###########################################################################
 
 setwd("/home/Shared/data/array/Microarray_Edwin")
@@ -80,7 +84,7 @@ library(pd.mogene.2.0.st)
 
 ff <- as.character(targets$FileName)
 
-x <- oligo::read.celfiles(filenames = ff)
+x <- oligo::read.celfiles(filenames = ff) ## GeneFeatureSet
 
 pdf("boxplot.pdf")
 par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
@@ -119,7 +123,7 @@ dev.off()
 ###########################################################################
 
 
-eset <- oligo::rma(x) ## Is the expression in log2 scale?
+eset <- oligo::rma(x) ## Is the expression in log2 scale? ## ExpressionSet
 
 
 pdf("boxplot_norm.pdf")
@@ -174,7 +178,7 @@ dev.off()
 
 
 ###########################################################################
-####### Annotation
+####### Annotation from mogene20sttranscriptcluster
 ###########################################################################
 # source("http://bioconductor.org/biocLite.R")
 # biocLite("mogene20sttranscriptcluster.db")
@@ -214,18 +218,65 @@ table(sapply(mg, length))
 # probes.ALL <- featureNames(eset)
 # SYMBOL <- getSYMBOL(probes.ALL,"mogene20sttranscriptcluster.db")
 
-
-
-
 annot <- data.frame(SYMBOL = SYMBOL, ENTREZID = ENTREZID , stringsAsFactors = FALSE)
 
 fData(eset) <- annot 
 
+
+table(is.na(annot$ENTREZID))
+table(is.na(annot$SYMBOL))
+
+
 eset.org <- eset
 
-###
+
+###########################################################################
+####### NetAffx Annotation
+###########################################################################
+
 
 infoNetAffx <- pData(getNetAffx(eset, "transcript"))
+head(infoNetAffx)
+
+
+apply(infoNetAffx, 2, function(cat){sum(is.na(cat))})
+
+all(infoNetAffx$transcriptclusterid == infoNetAffx$probesetid)
+
+sum(infoNetAffx$totalprobes)
+
+
+###########################################################################
+####### Get probe info
+###########################################################################
+
+
+### try to get info about probe types
+probeInfo <- oligo::getProbeInfo(x, field = c('fid', 'fsetid', 'level', 'type', 'transcript_cluster_id'), probeType = "pm", target='core')
+
+head(probeInfo)
+
+tbl <- table(probeInfo$type, useNA = "always")
+
+sum(tbl)
+
+
+
+###########################################################################
+### TRY GC content per probe
+###########################################################################
+# probe with higher GC content will have higher background
+
+
+pmSeq <- oligo::pmSequence(x, target='core')
+
+
+library(Biostrings)
+gcCont <- letterFrequency(pmSeq, letters='CG')[,1]
+
+
+
+
 
 
 
@@ -240,7 +291,7 @@ eset <- eset.org
 
 library(genefilter)
 
-table(infoNetAffx$category, useNA = "always")
+tblNA <- table(infoNetAffx$category, useNA = "always")
 
 antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
 
@@ -265,8 +316,6 @@ table(keep)
 
 eset <- eset.org[keep,]
 
-
-
 ###########################################################################
 ####### remove control probes == keep main probes
 ###########################################################################
@@ -277,7 +326,7 @@ eset <- eset.org[keep,]
 
 library(affycoretools)
 
-eset <- affycoretools::getMainProbes(eset)
+eset.main <- affycoretools::getMainProbes(eset)
 
 
 ###########################################################################
@@ -287,13 +336,256 @@ eset <- affycoretools::getMainProbes(eset)
 
 table(infoNetAffx$seqname, useNA = "always")
 
-keepCHR <- featureNames(eset) %in% rownames(infoNetAffx)[which(infoNetAffx$seqname %in% paste0("chr", c(1:19, "Y", "X")), useNames = TRUE)]
+keepCHR <- featureNames(eset.main) %in% rownames(infoNetAffx)[which(infoNetAffx$seqname %in% paste0("chr", c(1:19, "Y", "X")), useNames = TRUE)]
 
 table(keepCHR)
 
-eset <- eset[keepCHR, ]
+eset.main <- eset.main[keepCHR, ]
 
-eset.org <- eset
+eset.org <- eset.main
+
+
+###########################################################################
+####### NetAffx Annotation
+###########################################################################
+
+
+# infoNetAffx <- pData(getNetAffx(eset, "transcript"))
+# head(infoNetAffx)
+# dim(infoNetAffx)
+# 
+# apply(infoNetAffx, 2, function(cat){sum(is.na(cat))})
+# 
+# all(infoNetAffx$transcriptclusterid == infoNetAffx$probesetid)
+# 
+# ### check how many probesets have no annotation in fData and in infoNetAffx
+# table(is.na(fData(eset)[,"ENTREZID"]))
+# 
+# table(is.na(fData(eset)[,"ENTREZID"]) & is.na(infoNetAffx$geneassignment))
+
+
+
+
+
+###########################################################################
+####### Get ENSEMBL annotation from files on Affy website
+### http://www.affymetrix.com/estore/browse/level_three_category_and_children.jsp?category=35868&categoryIdClicked=35868&expand=true&parent=35617
+### http://www.affymetrix.com/analysis/index.affx#1_2
+###########################################################################
+# source("http://bioconductor.org/biocLite.R")
+# biocLite("AffyCompatible")
+
+# library(AffyCompatible)
+# 
+# # password <- AffyCompatible:::acpassword
+# 
+# rsrc <- NetAffxResource(user = "gosia.nowicka@uzh.ch", password = "mockIP27", directory = "NetAffx")
+# 
+# availableArrays <- names(rsrc)
+# head(availableArrays)
+# 
+# 
+# availableArrays[grep("Mo", availableArrays)]
+# 
+# 
+# affxDescription(rsrc[["MoGene-2_0-st-v1"]])
+# 
+# annos <- rsrc[["MoGene-2_0-st-v1"]]
+# annos
+# 
+# 
+# anno <- affxAnnotation(annos)[[4]]
+# anno
+# 
+# fl <- readAnnotation(rsrc, annotation=anno, content=FALSE)
+# 
+fl <- "NetAffx/MoGene-2_0-st-v1.na34.mm10.transcript.csv.zip"
+
+conn <- unz(fl, "MoGene-2_0-st-v1.na34.mm10.transcript.csv")
+
+readLines(conn, n=20)
+
+infoNetAffx2 <- read.table(conn, header=TRUE, sep=",", as.is = TRUE)
+
+dim(infoNetAffx2)
+
+rownames(infoNetAffx2) <- infoNetAffx2$transcript_cluster_id
+
+apply(infoNetAffx2, 2, function(cat){sum(is.na(cat))})
+
+all(infoNetAffx2$transcript_cluster_id == infoNetAffx2$probeset_id)
+
+
+colnames(infoNetAffx) <- colnames(infoNetAffx2)
+
+
+probesetID <- "17457722"
+
+infoNetAffx2[probesetID,]
+
+infoNetAffx[probesetID,]
+
+
+
+infoNetAffx2[probesetID,] == infoNetAffx[probesetID,]
+
+
+infoNetAffx2[probesetID, "mrna_assignment"]
+
+infoNetAffx[probesetID, "mrna_assignment"]
+
+
+
+
+###### files that are formated for easy load 
+
+
+annof <- list.files("NetAffx", pattern = ".tsv", full.names = TRUE)
+annof
+
+### does not work
+# anno_list <- read.table(annof[2], header = TRUE, sep = "\t", as.is = TRUE)
+
+############## public_database_references
+
+
+allLines <- readLines(annof[3], n=-1)
+
+pdr <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+
+colnames(pdr) <- gsub(pattern = " ", replacement = "" ,pdr[1,])
+pdr <- pdr[-1,]
+
+rownames(pdr) <- pdr$TranscriptClusterID
+
+head(pdr)
+dim(pdr)
+
+colnames(pdr)
+
+table(pdr$EntrezGeneID == "---")
+
+table(pdr$GeneSymbol == "---")
+
+
+table(pdr$TranscriptID == "---")
+
+table(pdr[ featureNames(eset.main) ,"TranscriptID"]== "---")
+
+table(pdr[ featureNames(eset.main) ,"GeneSymbol"] == "---")
+
+
+
+
+probesetID <- "17299972"
+
+pdr[probesetID,]
+
+
+pdr[probesetID, "GeneSymbol"]
+
+
+
+infoNetAffx2[probesetID,]
+
+
+
+############## gene_list
+
+allLines <- readLines(annof[2], n=-1)
+
+gl <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+
+colnames(gl) <- gsub(pattern = " ", replacement = "" ,gl[1,])
+gl <- gl[-1,]
+
+rownames(gl) <- gl$TranscriptClusterID
+
+head(gl)
+
+dim(gl)
+
+colnames(gl)
+
+table(gl$EntrezGeneID == "---")
+
+table(gl$GeneSymbol == "---")
+
+table(gl$GeneTitle == "---")
+
+
+table(gl[ featureNames(eset.main) ,"GeneSymbol"] == "---")
+
+
+### list of probe sets with no annotation in the end 
+noAnnot <- featureNames(eset.main)[gl[ featureNames(eset.main) ,"GeneSymbol"] == "---"]
+
+probesetID <- noAnnot[1] 
+
+
+
+probesetID <- "17422859"
+
+infoNetAffx2[probesetID,1:9]
+
+gl[probesetID,]
+
+
+annot <- gl[ featureNames(eset.main) ,c("GeneSymbol", "EntrezGeneID", "GeneTitle")]
+
+fData(eset.main) <- annot 
+
+
+
+
+
+
+
+###########################################################################
+####### Get ENSEMBL annotation using biomaRt
+###########################################################################
+
+
+library(biomaRt)
+
+
+mart <- useMart("ensembl")
+listDatasets(mart)
+
+
+mart <- useMart("ensembl", dataset="mmusculus_gene_ensembl")
+
+attr <- listAttributes(mart)
+
+h(attr)
+
+attr[grep("affy", attr$name),]
+
+listFilters(mart)
+
+genes <- getBM(attributes = c("ensembl_gene_id","external_gene_name", "description","affy_mogene_2_1_st_v1"), filters="affy_mogene_2_1_st_v1", values=featureNames(eset.main), mart=mart)
+
+dim(genes)
+
+length(unique(genes$affy_mogene_2_1_st_v1))
+
+probesetID <- "17457722"
+
+genes[genes$affy_mogene_2_1_st_v1 == probesetID, ]
+
+
+
+
+
+noAnnotMart <- genes[genes$affy_mogene_2_1_st_v1 %in% noAnnot, ]
+
+table(grepl("predicted", noAnnotMart$description))
+
+head(noAnnotMart[!grepl("predicted", noAnnotMart$description), ])
+
+
+
+
 
 
 

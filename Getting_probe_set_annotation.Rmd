@@ -1,0 +1,234 @@
+---
+title: "Annotation"
+author: "Gosia"
+date: "9 Mar 2015"
+output: html_document
+---
+
+```{r setup, echo = FALSE}
+opts_knit$set(root.dir = "/home/Shared/data/array/Microarray_Edwin")
+opts_chunk$set(message=FALSE, warning = FALSE, cache = TRUE, size="small", tidy=TRUE, tidy.opts=list(blank=FALSE, width.cutoff=70))
+options(width=100)
+```
+
+```{r}
+targets <- read.table(file.path("metadata", "targets.xls"), header = TRUE, sep = "\t", comment.char = "", as.is = TRUE)
+targets
+
+```
+
+Load Affy CEL data using `oligo` package. Plot the distributions of raw probe expression in all samples.
+
+```{r}
+library(oligo)
+library(pd.mogene.2.0.st)
+
+ff <- as.character(targets$FileName)
+
+x <- oligo::read.celfiles(filenames = ff)
+
+```
+
+
+#### Normalize data with RMA method
+
+```{r}
+eset <- oligo::rma(x) 
+
+```
+
+
+#### Get annotations 
+
+```{r NetAffx}
+####### NetAffx Annotation
+
+infoNetAffx <- pData(getNetAffx(eset, "transcript"))
+head(infoNetAffx)
+
+### show how many NAs is there for each cathegory
+apply(infoNetAffx, 2, function(cat){sum(is.na(cat))})
+
+```
+
+#### Filtering
+
+
+```{r filtering}
+####### remove control probes == keep main probes
+
+library(affycoretools)
+
+eset.main <- affycoretools::getMainProbes(eset)
+
+####### Keep probes from chr1-chr19, Y, X
+
+# table(infoNetAffx$seqname, useNA = "always")
+
+keepCHR <- featureNames(eset.main) %in% rownames(infoNetAffx)[which(infoNetAffx$seqname %in% paste0("chr", c(1:19, "Y", "X")), useNames = TRUE)]
+
+table(keepCHR)
+
+eset.main <- eset.main[keepCHR, ]
+
+eset.main
+```
+
+#### Get annotations 
+
+```{r NetAffx2}
+####### Get ENSEMBL annotation from files on Affy website
+### http://www.affymetrix.com/estore/browse/level_three_category_and_children.jsp?category=35868&categoryIdClicked=35868&expand=true&parent=35617
+### http://www.affymetrix.com/analysis/index.affx#1_2
+
+fl <- "NetAffx/MoGene-2_0-st-v1.na34.mm10.transcript.csv.zip"
+
+conn <- unz(fl, "MoGene-2_0-st-v1.na34.mm10.transcript.csv")
+
+infoNetAffx2 <- read.table(conn, header=TRUE, sep=",", as.is = TRUE)
+
+dim(infoNetAffx2)
+
+rownames(infoNetAffx2) <- infoNetAffx2$transcript_cluster_id
+
+colnames(infoNetAffx) <- colnames(infoNetAffx2)
+
+
+probesetID <- "17457722" ## probe set with no ENTREZID
+
+infoNetAffx2[probesetID,]
+
+infoNetAffx[probesetID,]
+
+
+
+infoNetAffx2[probesetID,] == infoNetAffx[probesetID,]
+
+
+infoNetAffx2[probesetID, "mrna_assignment"]
+
+infoNetAffx[probesetID, "mrna_assignment"]
+
+
+
+
+###### files that are formated for easy load 
+
+
+annof <- list.files("NetAffx", pattern = ".tsv", full.names = TRUE)
+annof
+
+### does not work
+# anno_list <- read.table(annof[2], header = TRUE, sep = "\t", as.is = TRUE)
+
+
+############## gene_list
+
+allLines <- readLines(annof[2], n=-1)
+
+gl <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+
+colnames(gl) <- gsub(pattern = " ", replacement = "" ,gl[1,])
+gl <- gl[-1,]
+
+rownames(gl) <- gl$TranscriptClusterID
+
+head(gl)
+
+dim(gl)
+
+colnames(gl)
+
+table(gl$EntrezGeneID == "---")
+
+table(gl$GeneSymbol == "---")
+
+table(gl$GeneTitle == "---")
+
+
+table(gl[ featureNames(eset.main) ,"GeneSymbol"] == "---")
+
+
+### list of probe sets with no annotation in the end 
+noAnnot <- featureNames(eset.main)[gl[ featureNames(eset.main) ,"GeneSymbol"] == "---"]
+
+
+probesetID <- "17457722" ## probe set with no ENTREZID
+
+infoNetAffx2[probesetID,1:9]
+
+gl[probesetID,]
+
+
+
+probesetID <- "17422859" ## probe with ENTREZID: Tnfrsf4 22163
+
+infoNetAffx2[probesetID,1:9]
+
+gl[probesetID,]
+
+
+### use this annotation info 
+annot <- gl[ featureNames(eset.main) ,c("GeneSymbol", "EntrezGeneID", "GeneTitle")]
+
+fData(eset.main) <- annot 
+
+probesetID <- noAnnot[1] 
+
+```
+
+
+```{r}
+####### Get ENSEMBL annotation using biomaRt
+
+library(biomaRt)
+
+
+mart <- useMart("ensembl")
+# listDatasets(mart)
+
+
+mart <- useMart("ensembl", dataset="mmusculus_gene_ensembl")
+
+attr <- listAttributes(mart)
+
+attr[grep("affy", attr$name),] ### no affy_mogene_2_0_st_v1!!!
+
+# listFilters(mart)
+
+genes <- getBM(attributes = c("ensembl_gene_id","external_gene_name", "description","affy_mogene_2_1_st_v1"), filters="affy_mogene_2_1_st_v1", values=featureNames(eset.main), mart=mart)
+
+dim(genes)
+### anyways not all probe sets get the Ensembl ID
+length(unique(genes$affy_mogene_2_1_st_v1))
+
+
+
+probesetID <- "17457722" ## probe set with no ENTREZID
+genes[genes$affy_mogene_2_1_st_v1 == probesetID, ]
+
+
+
+probesetID <- "17422859" ## probe with ENTREZID: Tnfrsf4 22163
+### has additional Symbol
+genes[genes$affy_mogene_2_1_st_v1 == probesetID, ] 
+
+
+
+### for probe sets with no annotation in NetAffx2 most of the genes are predicted 
+noAnnotMart <- genes[genes$affy_mogene_2_1_st_v1 %in% noAnnot, ]
+
+table(grepl("predicted", noAnnotMart$description))
+
+head(noAnnotMart[!grepl("predicted", noAnnotMart$description), ])
+
+
+```
+
+
+
+
+
+
+
+
