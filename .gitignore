@@ -9,3 +9,10 @@
 
 # RStudio files
 .Rproj.user/
+
+#########
+
+*.Rproj
+._*
+.DS*
+

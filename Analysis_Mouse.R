@@ -1,0 +1,614 @@
+###########################################################################
+# Created 25 Feb 2015
+# BioC 3.0
+
+# DE analysis of Affymetrix Mouse Gene 2.0 ST arrays (pd.mogene.2.0.st)
+
+###########################################################################
+
+setwd("/home/Shared/data/array/Microarray_Edwin")
+
+###########################################################################
+#### create targets table with information about samples
+###########################################################################
+
+library(limma)
+
+
+metadata <- read.table("metadata/Micro-array sample list.txt", sep = "\t")
+
+targets <- data.frame(metadata , filename = list.files("CEL/", pattern="IA2" ,full.names = TRUE))
+
+colnames(targets) <- c("Experiment", "SampleNr", "CellType", "FileName")
+
+targets$ExperimentShort <- targets$Experiment
+levels(targets$ExperimentShort) <- c("Bone marrow control"="control", "Kit control"="control", "Leukemia"="leukemia", "Leukemia after treatment" = "afterTreatment", "T cell control" = "control", "Thymocyte control" = "control")
+
+targets$CellTypeShort <- targets$CellType
+levels(targets$CellTypeShort) <- c("907" = "907", "907 - Post Dex" = "907", "B2M10" = "B2M10", "B2M2" = "B2M2", "B2M3" = "B2M3", "B2M3 Post dex" = "B2M3", "B3M3" = "B3M3", "B3M30" = "B3M30", "CD4 T cells spleen 1" = "CD4", "CD4 T cells spleen 2" = "CD4", "CD4 T cells spleen 3" = "CD4", "CD4+8+ DP Thymocytes 1" = "CD4+8+", "CD4+8+ DP Thymocytes 2" = "CD4+8+", "CD4+8+ DP Thymocytes 3" = "CD4+8+", "CD8 T cells spleen 1" = "CD8", "CD8 T cells spleen 2" = "CD8", "CD8 T cells spleen 3" = "CD8", "HeLa control" = "HeLa", "Whole bone marrow 1" = "wholeBoneMarrow", "Whole bone marrow 2" = "wholeBoneMarrow", "Whole bone marrow 3" = "wholeBoneMarrow")
+  
+targets$labels <- factor(paste(targets$ExperimentShort, targets$CellTypeShort, sep="_" ))
+
+targets$groups <- targets$labels
+levels(targets$groups)[grep(pattern = "leukemia", levels(targets$groups))] <- "leukemia"
+levels(targets$groups)[grep(pattern = "afterTreatment", levels(targets$groups))] <- "afterTreatment"
+
+nlevels(targets$groups)
+
+targets$ctrlRep <- c(rep("", 12), rep(1:3, rep(4, 3)))
+
+
+library(RColorBrewer)
+# mypalette <- colorRampPalette(brewer.pal(11, "Spectral"))
+# mypalette <- colorRampPalette(brewer.pal(9, "Set1"))
+# mypalette <- function(n) {
+#   hues = seq(15, 375, length=n+1)
+#   hcl(h=hues, l=65, c=100)[1:n]
+# }
+# 
+# mypalette <- colorRampPalette(c("brown", "red", "orange", "yellow", "green", "blue", "violet", "pink", "grey"))
+
+# mypalette <- colorRampPalette(c("coral4", "firebrick2", "darkorange2", "goldenrod2", "forestgreen", "dodgerblue3", "darkviolet", "deeppink", "antiquewhite4"))
+
+mypalette <- colorRampPalette(c("firebrick2", "darkorange2", "goldenrod2", "forestgreen", "dodgerblue3","darkviolet", "deeppink", "lavenderblush4"))
+
+
+# p <- 12
+# plot(1:p, col = mypalette(p), pch = 16, cex = 5)
+# dev.off()
+
+
+targets$colors <- mypalette(nlevels(targets$groups))[targets$groups]
+
+write.table(targets, file = file.path("metadata", "targets.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
+
+########### read in targets
+
+targets <- read.table(file.path("metadata", "targets.xls"), header = TRUE, sep = "\t", comment.char = "", as.is = TRUE)
+
+targets
+
+
+###########################################################################
+#### import cel files
+###########################################################################
+# source("http://bioconductor.org/biocLite.R")
+# biocLite("pd.mogene.2.0.st")
+
+library(oligo)
+library(pd.mogene.2.0.st)
+
+ff <- as.character(targets$FileName)
+
+x <- oligo::read.celfiles(filenames = ff)
+
+pdf("boxplot.pdf")
+par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
+boxplot(x, las = 2, col = targets$colors, names = targets$labels, las=2)
+dev.off()
+
+pdf("hist.pdf")
+par(mar = c(5, 4, 4, 2) + 0.1)
+hist(x, col = targets$colors, lwd = 2)
+legend("topright", legend = targets$labels, col =  targets$colors, lty = 1, lwd = 2, cex = 0.8)
+dev.off()
+
+
+###########################################################################
+### PLM normalization; create images of chips, NUSE and RLE plots
+###########################################################################
+
+fitplm <- oligo::fitProbeLevelModel(x)
+
+
+pdf("NUSE_fitplm.pdf")
+par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
+oligo::NUSE(fitplm, col = targets$colors, names = targets$labels, las=2)
+dev.off()
+
+pdf("RLE_fitplm.pdf")
+par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
+oligo::RLE(fitplm, col = targets$colors, names = targets$labels, las=2)
+dev.off()
+
+
+
+
+###########################################################################
+### Normalization with RMA
+###########################################################################
+
+
+eset <- oligo::rma(x) ## Is the expression in log2 scale?
+
+
+pdf("boxplot_norm.pdf")
+par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
+boxplot(eset, las = 2, col = targets$colors, names = targets$labels)
+dev.off()
+
+pdf("hist_norm.pdf")
+par(mar = c(5, 4, 4, 2) + 0.1)
+hist(eset, col = targets$colors, lwd = 2)
+legend("topright", legend = targets$labels, col =  targets$colors, lty = 1, lwd = 2, cex = 0.8)
+dev.off()
+
+
+labels <- paste0(ifelse(is.na(targets$ctrlRep), "", paste0(targets$ctrlRep, " ")), targets$labels)
+
+pdf("MDS_norm.pdf")
+
+### plot MDS for all samples
+mds.dendo <- mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2)
+### plot only points
+plot(mds$x, mds$y, pch = 16, cex = 1.5, col = targets$colors)
+
+### zoom in
+mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2, xlim = c(-1.5, 1.5), ylim = c(-1, 1))
+
+### plot MDS for all samples except HeLa and whole bone marrow controls 
+ex <- !targets$labels %in% c("control_wholeBoneMarrow", "control_HeLa")
+mds <- plotMDS(eset[, ex], top=1000, col = targets$colors[ex], labels = labels[ex], cex = 1)
+
+### plot only points
+plot(mds$x, mds$y, pch = 16, cex = 1.5, col = targets$colors[ex] )
+
+dev.off()
+
+
+
+
+library(ggplot2)
+library(ggdendro)
+
+pdf("dendo_norm.pdf")
+
+d <- mds.dendo$distance.matrix
+rownames(d) <- labels
+hc <- hclust(as.dist(d), method = "complete")
+ggdendrogram(hc, theme_dendro = TRUE) + theme(axis.text.x = element_text(colour = targets$colors[hc$order], size = 13)) 
+
+dev.off()
+
+
+
+
+###########################################################################
+####### Annotation
+###########################################################################
+# source("http://bioconductor.org/biocLite.R")
+# biocLite("mogene20sttranscriptcluster.db")
+
+
+expr <- data.frame(exprs(eset))
+
+library(mogene20sttranscriptcluster.db)
+
+### Display all mappings
+mogene20sttranscriptcluster()
+
+# # I way
+# annot <- data.frame(SYMBOL=sapply(contents(mogene20sttranscriptclusterSYMBOL), paste, collapse=", "), ENTREZID=sapply(contents(mogene20sttranscriptclusterENTREZID), paste, collapse=", "), stringsAsFactors = FALSE)
+
+
+# II way
+probes.ALL=row.names(expr)
+SYMBOL = unlist(mget(probes.ALL, mogene20sttranscriptclusterSYMBOL))
+ENTREZID = unlist(mget(probes.ALL, mogene20sttranscriptclusterENTREZID))
+
+### check if it returns always one values - YES
+mg <- mget(probes.ALL, mogene20sttranscriptclusterENTREZID)
+table(sapply(mg, length))
+
+
+# # IV way
+# probes.ALL=row.names(expr)
+# SYMBOLb = sapply(mget(probes.ALL, mogene20sttranscriptclusterSYMBOL), paste, collapse=", ")
+# ENTREZIDb = sapply(mget(probes.ALL, mogene20sttranscriptclusterENTREZID), paste, collapse=", ")
+# 
+# all(SYMBOL == SYMBOLb)
+
+
+# # III way
+# library(annotate)
+# probes.ALL <- featureNames(eset)
+# SYMBOL <- getSYMBOL(probes.ALL,"mogene20sttranscriptcluster.db")
+
+
+
+
+annot <- data.frame(SYMBOL = SYMBOL, ENTREZID = ENTREZID , stringsAsFactors = FALSE)
+
+fData(eset) <- annot 
+
+eset.org <- eset
+
+###
+
+infoNetAffx <- pData(getNetAffx(eset, "transcript"))
+
+
+
+###########################################################################
+####### Filtering probes with low expression 
+###########################################################################
+
+eset <- eset.org
+
+
+#### using background information from antigenomic probesets
+
+library(genefilter)
+
+table(infoNetAffx$category, useNA = "always")
+
+antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
+
+
+# bkg <- apply(exprs(eset)[as.character(antigm), ], 2, quantile, probs=0.5)
+# minval <- max(bkg)
+# minval
+
+
+
+bkg <- apply(exprs(eset)[as.character(antigm), ], 2, mean)
+# bkg <- rowMeans( exprs(eset)[as.character(antigm),] )
+
+minval <- mean(bkg)
+minval
+
+
+keep <- genefilter(eset, filterfun(kOverA(3, minval)))
+
+table(keep)
+
+
+eset <- eset.org[keep,]
+
+
+
+###########################################################################
+####### remove control probes == keep main probes
+###########################################################################
+
+
+# source("http://bioconductor.org/biocLite.R")
+# biocLite("affycoretools")
+
+library(affycoretools)
+
+eset <- affycoretools::getMainProbes(eset)
+
+
+###########################################################################
+####### Keep probes from chr1-chr19, Y, X
+###########################################################################
+
+
+table(infoNetAffx$seqname, useNA = "always")
+
+keepCHR <- featureNames(eset) %in% rownames(infoNetAffx)[which(infoNetAffx$seqname %in% paste0("chr", c(1:19, "Y", "X")), useNames = TRUE)]
+
+table(keepCHR)
+
+eset <- eset[keepCHR, ]
+
+eset.org <- eset
+
+
+
+###########################################################################
+#### Comparison 1: leukemia VS. controls
+#### fitting model for all data
+###########################################################################
+
+### sort samples by groups
+ord <- order(targets$groups)
+targets <- targets[ord, ]
+eset.org <- eset.org[ ,ord]
+
+# sampleNames(eset.org)
+# targets$FileName
+
+
+samples2keep <- grepl("leukemia|control_CD", targets$labels)
+
+treatments <- data.frame(Treatment = as.character(targets$groups[samples2keep]))
+treatments
+
+eset <- eset.org[,samples2keep] 
+
+design <- model.matrix(~ 0 + Treatment, data=treatments)
+rownames(design) <- targets$labels[samples2keep]
+design
+
+
+fit <- lmFit(eset, design)
+
+contrasts <- cbind(CtrlCD4 = c(1, 0, 0, -1), CtrlCD4CD8 = c(0, 1, 0, -1), CtrlCD8 = c(0, 0, 1, -1))
+contrasts
+
+
+fit2 <- contrasts.fit(fit, contrasts)
+
+fit2 <- eBayes(fit2, trend = TRUE)
+
+pdf("plotSA.pdf")
+plotSA(fit2)
+dev.off()
+
+
+results <- decideTests(fit2)
+summary(results)
+
+
+pdf("vennDiagram.pdf")
+vennDiagram(results,include=c("up", "down"))
+dev.off()
+
+
+pdf("plotMA.pdf")
+limma::plotMA(fit2, coef = "CtrlCD4", status = p.adjust(fit2$p.value[, "CtrlCD4"], method="BH") < 0.05)
+limma::plotMA(fit2, coef = "CtrlCD4CD8", status = p.adjust(fit2$p.value[, "CtrlCD4CD8"], method="BH") < 0.05)
+limma::plotMA(fit2, coef = "CtrlCD8", status = p.adjust(fit2$p.value[, "CtrlCD8"], method="BH") < 0.05)
+dev.off()
+
+
+### volcano plots
+library(ggplot2)
+
+
+coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8")
+
+pdf("volcanoplot.pdf")
+
+for(i in 1:length(coefs)){
+coef <- coefs[i] 
+table <- topTable(fit2, coef=coef, n=Inf)
+table$threshold = as.factor(table$adj.P.Val < 0.05)
+gg1 <- ggplot(data=table, aes(x=logFC, y=-log10(P.Value), colour=threshold)) +
+  geom_point(alpha=0.4, size=1.75) + theme_bw() +ggtitle(coef) +
+  theme(legend.position = "none") +
+  xlab("log2 fold change") + ylab("-log10 p-value")
+
+print(gg1)
+
+}
+
+dev.off()
+
+
+
+### histograms of p-values and adjusted p-values
+pdf(paste0("hist_pvs.pdf"))
+for(i in 1:length(coefs)){
+  
+  coef <- coefs[i]  
+  table <- topTable(fit2, coef=coef, n=Inf)
+  hist(table$P.Value, breaks = 100, main = coef, xlab = "P-values")
+  hist(table$adj.P.Val, breaks = 100, main = coef, xlab = "Adjusted p-values")
+  
+}
+dev.off()
+
+
+
+
+### plot expression of top sign. genes/probesets
+library(ggplot2)
+library(reshape2)
+
+topn <- 20
+exp <- exprs(eset)
+x <- 1:ncol(exp)
+
+for(i in 1:length(coefs)){
+  # i = 1
+  coef <- coefs[i]
+  
+  tt <- topTable(fit2, coef=coef, n=Inf)
+  write.table(tt, paste0("topTable_",coef,".xls"), quote = FALSE, sep = "\t")
+
+  topp <- rownames(tt)[1:topn]
+
+  pdf(paste0("topExpression_",coef,".pdf"))
+  par(mfrow=c(2,2))
+  
+  for(i in 1:topn){
+    
+    plot(x,exp[topp[i], ], xaxt = "n", ylab = "log2 Expression", xlab = "", pch = 16, cex = 2, col = targets$colors[samples2keep], main = paste0(topp[i]), las = 2)
+    axis(side=1, at=x, labels=NULL, las=2)
+     
+  }
+  
+  dev.off()
+  
+
+  df <- data.frame(Gene = topp, exp[topp,])
+  df.m <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
+  ### keep order of genes as in tt
+  df.m$Gene <- factor(df.m$Gene, levels = topp)
+  ### add Entrez ID to the facet labels
+  lab.fct <- paste0(topp, "\n Entrez ID: ", tt[topp, "ENTREZID"])
+  levels(df.m$Gene) <- lab.fct
+  
+  ggp <- ggplot(df.m, aes(x = Sample, y = Expression)) +  
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 80, hjust = 1, size = 10), plot.title = element_text(size = 16), strip.text.x = element_text(size = 10)) +
+    scale_x_discrete(labels=targets$groups[samples2keep]) +
+    labs(title = coef, y = "Log2 expression") +
+    geom_bar(stat = "identity", colour = targets$colors[samples2keep], fill = targets$colors[samples2keep]) +
+    facet_wrap(~ Gene, scales="free_y", ncol=4) 
+  
+  pdf(paste0("topExpressionBarPlot_",coef,".pdf"))
+  print(ggp)    
+  dev.off()
+  
+}
+
+
+
+
+###########################################################################
+#### Gene set enrichment analysis - wait for sets from Edwin
+###########################################################################
+
+# gene sets from MSigDB with ENTREZ IDs
+load("GeneSets_MSigDB/human_c2_v4.rdata")
+
+Hs.c2[1]
+mysets <- Hs.c2
+
+annot <- fData(eset)
+table(is.na(annot$ENTREZID))
+
+
+Index <- lapply(mysets, function(k) annot$ENTREZID %in% k)
+
+
+treatments <- data.frame(Treatment = targets$Treatment, Replicate = targets$Replicate)
+treatments$Tmp <- factor(targets$Treatment, levels = unique(targets$Treatment), labels = unique(targets$Treatment))
+levels(treatments$Tmp ) <- c("NoTmp", "Tmp", "Tmp", "Tmp")
+treatments
+
+treatments$four <- interaction(treatments$Replicate, treatments$Tmp)
+
+design <- model.matrix(~ 0 + treatments$four)
+rownames(design) <- paste0(targets$Replicate , "_" , targets$Treatment)
+design
+
+
+contrasts <- cbind(FOS = c(1, 0, -1, 0), HYP = c(0, 1, 0, -1))
+contrasts
+
+
+
+gsea <- camera(y = eset, index=Index, design=design, contrast=contrasts[,"FOS"], trend.var=TRUE)
+
+head(gsea)
+
+table(gsea$FDR < 0.05)
+
+
+gsea <- camera(y = eset, index=Index, design=design, contrast=contrasts[,"HYP"], trend.var=TRUE)
+
+head(gsea)
+
+table(gsea$FDR < 0.05)
+
+
+
+
+###########################################################################
+#### GO analysis
+###########################################################################
+
+# source("http://bioconductor.org/biocLite.R")
+# biocLite("topGO")
+# source("http://bioconductor.org/biocLite.R")
+# biocLite("Rgraphviz")
+
+library(topGO)
+library(Rgraphviz)
+
+
+affyLib <- "mogene20sttranscriptcluster.db"
+
+coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8")
+coef <- coefs[1]
+
+tt <- topTable(fit2, coef=coef, n=Inf)
+geneList <- rep(0, nrow(tt))
+names(geneList) <- rownames(tt)
+geneList[tt$adj.P.Val < 0.05] <- 1
+table(geneList)
+
+### Function used to create new topGOdata object
+fun.gene.sel <- function(geneList) {
+  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
+}
+
+
+allRes.Fisher.merged <- NULL
+allRes.Fisher.elim.merged <- NULL
+
+
+for(go in c("BP","MF","CC")){
+  # go = "BP"
+  
+  sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", coef), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
+  
+  print(sampleGOdata)
+  
+  
+  # Fisher's exact test which is based on gene counts, and a Kolmogorov-Smirnov like test which computes enrichment based on gene scores
+  # For the method classic each GO category is tested independently
+  
+  resultFisher <- runTest(sampleGOdata, algorithm = "classic", statistic = "fisher")
+  resultFisher.elim <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
+  
+  
+  pValues.Fisher <- score(resultFisher)
+  topNodes.Fisher <- length(pValues.Fisher)
+  
+  pValues.Fisher.elim <- score(resultFisher.elim)
+  topNodes.Fisher.elim <- length(pValues.Fisher.elim)
+  
+  
+  allRes.Fisher <- GenTable(sampleGOdata, classicFisher = resultFisher, elimFisher = resultFisher.elim, orderBy = "classicFisher", ranksOf = "elimFisher", topNodes = topNodes.Fisher) 
+  
+  allRes.Fisher$GO <- go   
+  allRes.Fisher.merged <- rbind(allRes.Fisher.merged, allRes.Fisher)
+  
+  
+  allRes.Fisher.elim <- GenTable(sampleGOdata, classicFisher = resultFisher, elimFisher = resultFisher.elim, orderBy = "elimFisher", ranksOf = "classicFisher", topNodes = topNodes.Fisher.elim)      
+  
+  allRes.Fisher.elim$GO <- go 
+  allRes.Fisher.elim.merged <- rbind(allRes.Fisher.elim.merged, allRes.Fisher.elim)
+  
+  
+  
+  pdf(paste("GO_", go, ".pdf", sep=""))
+  showSigOfNodes(sampleGOdata, score(resultFisher), firstSigNodes = 5, useInfo = 'all')
+  showSigOfNodes(sampleGOdata, score(resultFisher.elim), firstSigNodes = 5, useInfo = 'all')
+  dev.off()
+  
+  
+}
+
+
+allRes.Fisher.merged$classicFisher.adj <- p.adjust(allRes.Fisher.merged$classicFisher, method = "BH")
+allRes.Fisher.merged <- allRes.Fisher.merged[order(allRes.Fisher.merged$classicFisher.adj, decreasing = FALSE), ]
+
+head(allRes.Fisher.merged, 20)
+
+
+write.table(allRes.Fisher.merged, paste("GO_Fisher_",coef,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+allRes.Fisher.elim.merged$elimFisher.adj <- p.adjust(allRes.Fisher.elim.merged$elimFisher, method = "BH")
+allRes.Fisher.elim.merged <- allRes.Fisher.elim.merged[order(allRes.Fisher.elim.merged$elimFisher.adj, decreasing = FALSE), ]
+
+head(allRes.Fisher.elim.merged, 20)
+
+write.table(allRes.Fisher.elim.merged, paste("GO_Fisher_elim_",coef,".xls", sep=""), sep="\t", row.names=F)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

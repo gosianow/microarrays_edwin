@@ -1,0 +1,316 @@
+---
+title: "DE analysis for Edwin"
+author: "Gosia Nowicka"
+date: "25 Feb 2015"
+output: html_document
+---
+
+## Data and experiment description
+
+Affymetrix Mouse Gene 2.0 ST arrays
+
+## Prepare data
+
+```{r setup, echo = FALSE}
+opts_knit$set(root.dir = "/home/Shared/data/array/Microarray_Edwin")
+opts_chunk$set(message=FALSE, warning = FALSE, cache = TRUE, size="small", tidy=TRUE, tidy.opts=list(blank=FALSE, width.cutoff=70))
+options(width=100)
+```
+
+Load targets table with information about samples.
+
+```{r}
+targets <- read.table(file.path("metadata", "targets.xls"), header = TRUE, sep = "\t", comment.char = "", as.is = TRUE)
+
+targets
+
+```
+
+Load Affy CEL data using `oligo` package. Plot the distributions of raw probe expression in all samples.
+
+```{r}
+library(oligo)
+library(pd.mogene.2.0.st)
+
+ff <- as.character(targets$FileName)
+
+x <- oligo::read.celfiles(filenames = ff)
+
+par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
+boxplot(x, las = 2, col = targets$colors, names = targets$labels, las=2)
+
+par(mar = c(5, 4, 4, 2) + 0.1)
+hist(x, col = targets$colors, lwd = 2)
+legend("topright", legend = targets$labels, col =  targets$colors, lty = 1, lwd = 2, cex = 0.8)
+
+```
+
+#### Normalize data with probe-level model
+
+Run `fitProbeLevelModel` and create NUSE and RLE plots (https://genevestigator.com/userdocs/manual/qc.html).
+
+```{r}
+fitplm <- oligo::fitProbeLevelModel(x)
+
+par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
+oligo::NUSE(fitplm, col = targets$colors, names = targets$labels, las=2)
+
+par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
+oligo::RLE(fitplm, col = targets$colors, names = targets$labels, las=2)
+
+```
+
+#### Normalize data with RMA method
+
+```{r}
+eset <- oligo::rma(x) ## Is the expression in log2 scale?
+
+par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
+boxplot(eset, las = 2, col = targets$colors, names = targets$labels)
+
+par(mar = c(5, 4, 4, 2) + 0.1)
+hist(eset, col = targets$colors, lwd = 2)
+legend("topright", legend = targets$labels, col =  targets$colors, lty = 1, lwd = 2, cex = 0.8)
+
+
+labels <- paste0(ifelse(is.na(targets$ctrlRep), "", paste0(targets$ctrlRep, " ")), targets$labels)
+
+### plot MDS for all samples
+mds.dendo <- mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2)
+### plot only points
+plot(mds$x, mds$y, pch = 16, cex = 1.5, col = targets$colors)
+
+### zoom in
+mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2, xlim = c(-1.5, 1.5), ylim = c(-1, 1))
+
+### plot MDS for all samples except HeLa and whole bone marrow controls 
+ex <- !targets$labels %in% c("control_wholeBoneMarrow", "control_HeLa")
+mds <- plotMDS(eset[, ex], top=1000, col = targets$colors[ex], labels = labels[ex], cex = 1)
+
+### plot only points
+plot(mds$x, mds$y, pch = 16, cex = 1.5, col = targets$colors[ex] )
+
+
+library(ggplot2)
+library(ggdendro)
+
+d <- mds.dendo$distance.matrix
+rownames(d) <- labels
+hc <- hclust(as.dist(d), method = "complete")
+ggdendrogram(hc, theme_dendro = TRUE) + theme(axis.text.x = element_text(colour = targets$colors[hc$order], size = 13)) 
+
+```
+
+#### Get annotation of probesets
+
+```{r}
+
+expr <- data.frame(exprs(eset))
+
+library(mogene20sttranscriptcluster.db)
+
+probes.ALL=row.names(expr)
+SYMBOL = unlist(mget(probes.ALL, mogene20sttranscriptclusterSYMBOL))
+ENTREZID = unlist(mget(probes.ALL, mogene20sttranscriptclusterENTREZID))
+
+
+annot <- data.frame(SYMBOL = SYMBOL, ENTREZID = ENTREZID , stringsAsFactors = FALSE)
+
+fData(eset) <- annot 
+
+eset.org <- eset
+
+###
+
+infoNetAffx <- pData(getNetAffx(eset, "transcript"))
+
+
+```
+
+
+
+#### Filtering
+
+Filter probesets with low expression. For that use the background information from antigenomic probesets.
+
+```{r}
+library(genefilter)
+
+table(infoNetAffx$category, useNA = "always")
+
+antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
+
+# bkg <- apply(exprs(eset)[as.character(antigm), ], 2, mean)
+bkg <- rowMeans( exprs(eset)[as.character(antigm),] )
+minval <- mean(bkg)
+minval
+
+keep <- genefilter(eset, filterfun(kOverA(3, minval)))
+
+table(keep)
+
+eset <- eset.org[keep,]
+
+```
+
+
+Keep only the main probes.
+
+```{r}
+library(affycoretools)
+
+eset <- affycoretools::getMainProbes(eset)
+
+```
+
+
+Keep only the probes that come from chr 1-19, X and Y.
+
+```{r}
+
+keepCHR <- featureNames(eset) %in% rownames(infoNetAffx)[which(infoNetAffx$seqname %in% paste0("chr", c(1:19, "Y", "X")), useNames = TRUE)]
+
+table(keepCHR)
+
+eset <- eset[keepCHR, ]
+
+eset.org <- eset
+
+eset.org
+```
+
+
+
+## Comparison 1
+
+Compare leukemia samples versus 3 different controls: CD4+, CD4+CD8+ and CD8+.
+
+```{r}
+
+### sort samples by groups
+ord <- order(targets$groups)
+targets <- targets[ord, ]
+eset.org <- eset.org[ ,ord]
+
+### keep only leukemia and control CD4+, CD4+CD8+ and CD8+ samples
+samples2keep <- grepl("leukemia|control_CD", targets$labels)
+
+treatments <- data.frame(Treatment = as.character(targets$groups[samples2keep]))
+treatments
+
+eset <- eset.org[,samples2keep] 
+
+design <- model.matrix(~ 0 + Treatment, data=treatments)
+rownames(design) <- targets$labels[samples2keep]
+design
+
+fit <- lmFit(eset, design)
+
+contrasts <- cbind(CtrlCD4 = c(1, 0, 0, -1), CtrlCD4CD8 = c(0, 1, 0, -1), CtrlCD8 = c(0, 0, 1, -1))
+contrasts
+
+fit2 <- contrasts.fit(fit, contrasts)
+
+fit2 <- eBayes(fit2, trend = TRUE)
+
+plotSA(fit2)
+
+results <- decideTests(fit2)
+summary(results)
+
+vennDiagram(results,include=c("up", "down"))
+
+```
+
+
+
+```{r}
+
+limma::plotMA(fit2, coef = "CtrlCD4", status = p.adjust(fit2$p.value[, "CtrlCD4"], method="BH") < 0.05)
+limma::plotMA(fit2, coef = "CtrlCD4CD8", status = p.adjust(fit2$p.value[, "CtrlCD4CD8"], method="BH") < 0.05)
+limma::plotMA(fit2, coef = "CtrlCD8", status = p.adjust(fit2$p.value[, "CtrlCD8"], method="BH") < 0.05)
+
+
+library(ggplot2)
+
+coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8")
+
+for(i in 1:length(coefs)){
+  
+  coef <- coefs[i]
+
+  table <- topTable(fit2, coef=coef, n=Inf)
+  table$threshold = as.factor(table$adj.P.Val < 0.05)
+  gg1 <- ggplot(data=table, aes(x=logFC, y=-log10(P.Value), colour=threshold)) +
+    geom_point(alpha=0.4, size=1.75) + theme_bw() +ggtitle(coef) +
+    theme(legend.position = "none") +
+    xlab("log2 fold change") + ylab("-log10 p-value")
+  
+  print(gg1)
+  hist(table$P.Value, breaks = 100, main = coef, xlab = "P-values")
+  
+}
+
+
+```
+
+Plot expression of top significant genes/probe sets.
+
+```{r, fig.width = 11, fig.height = 11}
+library(ggplot2)
+library(reshape2)
+
+topn <- 20
+exp <- exprs(eset)
+x <- 1:ncol(exp)
+
+for(i in 1:length(coefs)){
+  # i = 1
+  coef <- coefs[i]
+  
+  tt <- topTable(fit2, coef=coef, n=Inf)
+  print(coef)
+  print(head(tt, topn))
+  write.table(tt, paste0("topTable_",coef,".xls"), quote = FALSE, sep = "\t")
+
+  topp <- rownames(tt)[1:topn]
+  
+  df <- data.frame(Gene = topp, exp[topp,])
+  df.m <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
+  ### keep order of genes as in tt
+  df.m$Gene <- factor(df.m$Gene, levels = topp)
+  ### add Entrez ID to the facet labels
+  lab.fct <- paste0(topp, "\n Entrez ID: ", tt[topp, "ENTREZID"])
+  levels(df.m$Gene) <- lab.fct
+  
+  ggp <- ggplot(df.m, aes(x = Sample, y = Expression)) +  
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 80, hjust = 1, size = 10), plot.title = element_text(size = 16), strip.text.x = element_text(size = 10)) +
+    scale_x_discrete(labels=targets$groups[samples2keep]) +
+    labs(title = coef, y = "Log2 expression") +
+    geom_bar(stat = "identity", colour = targets$colors[samples2keep], fill = targets$colors[samples2keep]) +
+    facet_wrap(~ Gene, scales="free_y", ncol=4) 
+  
+  print(ggp)    
+  
+}
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
