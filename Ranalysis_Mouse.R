@@ -247,7 +247,7 @@ sum(infoNetAffx$totalprobes)
 
 
 ###########################################################################
-####### Get probe info
+####### Get probe info - probe 2 transcript cluster match
 ###########################################################################
 
 
@@ -261,22 +261,27 @@ tbl <- table(probeInfo$type, useNA = "always")
 sum(tbl)
 
 
+setequal(featureNames(eset), unique(probeInfo$transcript_cluster_id))
+
+
 
 ###########################################################################
 ### TRY GC content per probe
 ###########################################################################
 # probe with higher GC content will have higher background
 
+# pms <- oligo::pm(x, target='core')
 
 pmSeq <- oligo::pmSequence(x, target='core')
+
+
 
 
 library(Biostrings)
 gcCont <- letterFrequency(pmSeq, letters='CG')[,1]
 
 
-
-
+probeInfo$gcCont <- gcCont
 
 
 
@@ -316,6 +321,61 @@ table(keep)
 
 eset <- eset.org[keep,]
 
+
+
+
+#################### based on GC content
+
+antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
+
+bgExpr <- exprs(eset)[as.character(antigm),]
+bgExpr
+
+bgProbeInfo <- subset(probeInfo, probeInfo$type == "control->bgp->antigenomic")
+head(bgProbeInfo)
+
+# bgProbeInfoSpl <- split(bgProbeInfo, f = bgProbeInfo$transcript_cluster_id)
+# gcContTrans <- sapply(bgProbeInfoSpl, function(pi) mean(pi[,"gcCont"]))
+
+
+library(plyr)
+
+bgTransInfo <- ddply(bgProbeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
+bgTransInfo
+
+library(matrixStats)
+# ls("package:matrixStats")
+
+
+bgTransInfo$MedianExpr <- rowMedians(bgExpr)
+bgTransInfo$MeanExpr <- rowMeans(bgExpr)
+
+  
+
+
+transInfo <- ddply(probeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
+head(transInfo)
+
+transInfo$gcCont <- round(transInfo$gcCont)
+
+transInfo$minExpr <- factor(transInfo$gcCont, levels = bgTransInfo$gcCont)
+levels(transInfo$minExpr) <- bgTransInfo$MedianExpr
+transInfo$minExpr <- as.numeric(as.character(transInfo$minExpr))
+
+expr <- exprs(eset)
+
+all(rownames(expr) == transInfo$transcript_cluster_id)
+
+
+
+keep <- sapply(1:nrow(expr), function(tr){ sum(expr[tr, ] > transInfo$minExpr[tr]) > 3 } )
+
+table(keep)
+
+
+
+
+  
 ###########################################################################
 ####### remove control probes == keep main probes
 ###########################################################################

@@ -76,10 +76,12 @@ eset.main
 
 #### Get annotations 
 
+http://www.affymetrix.com/estore/browse/level_three_category_and_children.jsp?category=35868&categoryIdClicked=35868&expand=true&parent=35617
+http://www.affymetrix.com/analysis/index.affx
+
 ```{r NetAffx2}
 ####### Get ENSEMBL annotation from files on Affy website
-### http://www.affymetrix.com/estore/browse/level_three_category_and_children.jsp?category=35868&categoryIdClicked=35868&expand=true&parent=35617
-### http://www.affymetrix.com/analysis/index.affx#1_2
+
 
 fl <- "NetAffx/MoGene-2_0-st-v1.na34.mm10.transcript.csv.zip"
 
@@ -225,7 +227,82 @@ head(noAnnotMart[!grepl("predicted", noAnnotMart$description), ])
 
 ```
 
+## Filtering based on GC content
 
+
+```{r}
+####### Get probe info - probe 2 transcript cluster match
+
+probeInfo <- oligo::getProbeInfo(x, field = c('fid', 'fsetid', 'level', 'type', 'transcript_cluster_id'), probeType = "pm", target='core')
+
+head(probeInfo)
+
+setequal(featureNames(eset), unique(probeInfo$transcript_cluster_id))
+
+
+### get GC content per probe
+# probe with higher GC content will have higher background
+
+
+pmSeq <- oligo::pmSequence(x, target='core')
+
+
+library(Biostrings)
+gcCont <- letterFrequency(pmSeq, letters='CG')[,1]
+
+probeInfo$gcCont <- gcCont
+
+
+###### filtering based on GC content
+
+antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probeset_id"]
+
+bgExpr <- exprs(eset)[as.character(antigm),]
+bgExpr
+
+bgProbeInfo <- subset(probeInfo, probeInfo$type == "control->bgp->antigenomic")
+head(bgProbeInfo)
+
+# bgProbeInfoSpl <- split(bgProbeInfo, f = bgProbeInfo$transcript_cluster_id)
+# gcContTrans <- sapply(bgProbeInfoSpl, function(pi) mean(pi[,"gcCont"]))
+
+
+library(plyr)
+
+bgTransInfo <- ddply(bgProbeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
+bgTransInfo
+
+library(matrixStats)
+# ls("package:matrixStats")
+
+
+bgTransInfo$MedianExpr <- rowMedians(bgExpr)
+bgTransInfo$MeanExpr <- rowMeans(bgExpr)
+
+  
+
+
+transInfo <- ddply(probeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
+head(transInfo)
+
+transInfo$gcCont <- round(transInfo$gcCont)
+
+transInfo$minExpr <- factor(transInfo$gcCont, levels = bgTransInfo$gcCont)
+levels(transInfo$minExpr) <- bgTransInfo$MedianExpr
+transInfo$minExpr <- as.numeric(as.character(transInfo$minExpr))
+
+expr <- exprs(eset)
+
+all(rownames(expr) == transInfo$transcript_cluster_id)
+
+
+
+keep <- sapply(1:nrow(expr), function(tr){ sum(expr[tr, ] > transInfo$minExpr[tr]) > 3 } )
+
+table(keep)
+
+
+```
 
 
 
