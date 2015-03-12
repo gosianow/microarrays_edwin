@@ -5,18 +5,13 @@ setwd("/home/Shared/data/array/Microarray_Edwin")
 
 inputK <- "/home/gosia/R/R_Microarrays_Edwin/Analysis_Mouse.Rmd"
 
-# knitr::knit2html(inputK)
-
 knitr::knit(inputK, tangle = TRUE)
-knitr::knit(inputK, tangle = FALSE)
+knitr::knit2html(inputK)
 
-inputM <- "/home/Shared/data/array/Microarray_Edwin/Analysis_Mouse.md"
-
-markdown::markdownToHTML(inputM)
 
 
 # library(rmarkdown)
-# rmarkdown::render("/home/gosia/R/R_Microarrays_Caroline/Analysis.Rmd")
+# rmarkdown::render("/home/gosia/R/R_Microarrays_Edwin/Analysis.Rmd")
 
 
 

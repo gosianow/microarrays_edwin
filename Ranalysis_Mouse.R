@@ -6,7 +6,9 @@
 
 # Update 9 Mar 2015 
 # - find Ensebl IDs
-
+# 11 Mar 2015
+# - add Ensembl annotation 
+# - filtering based on GC content
 
 ###########################################################################
 
@@ -178,60 +180,60 @@ dev.off()
 
 
 ###########################################################################
-####### Annotation from mogene20sttranscriptcluster
+####### Annotation from mogene20sttranscriptcluster - has many entrez IDs missing
 ###########################################################################
 # source("http://bioconductor.org/biocLite.R")
 # biocLite("mogene20sttranscriptcluster.db")
 
 
-expr <- data.frame(exprs(eset))
-
-library(mogene20sttranscriptcluster.db)
-
-### Display all mappings
-mogene20sttranscriptcluster()
-
-# # I way
-# annot <- data.frame(SYMBOL=sapply(contents(mogene20sttranscriptclusterSYMBOL), paste, collapse=", "), ENTREZID=sapply(contents(mogene20sttranscriptclusterENTREZID), paste, collapse=", "), stringsAsFactors = FALSE)
-
-
-# II way
-probes.ALL=row.names(expr)
-SYMBOL = unlist(mget(probes.ALL, mogene20sttranscriptclusterSYMBOL))
-ENTREZID = unlist(mget(probes.ALL, mogene20sttranscriptclusterENTREZID))
-
-### check if it returns always one values - YES
-mg <- mget(probes.ALL, mogene20sttranscriptclusterENTREZID)
-table(sapply(mg, length))
-
-
-# # IV way
-# probes.ALL=row.names(expr)
-# SYMBOLb = sapply(mget(probes.ALL, mogene20sttranscriptclusterSYMBOL), paste, collapse=", ")
-# ENTREZIDb = sapply(mget(probes.ALL, mogene20sttranscriptclusterENTREZID), paste, collapse=", ")
+# expr <- data.frame(exprs(eset))
 # 
-# all(SYMBOL == SYMBOLb)
-
-
-# # III way
-# library(annotate)
-# probes.ALL <- featureNames(eset)
-# SYMBOL <- getSYMBOL(probes.ALL,"mogene20sttranscriptcluster.db")
-
-annot <- data.frame(SYMBOL = SYMBOL, ENTREZID = ENTREZID , stringsAsFactors = FALSE)
-
-fData(eset) <- annot 
-
-
-table(is.na(annot$ENTREZID))
-table(is.na(annot$SYMBOL))
-
-
-eset.org <- eset
+# library(mogene20sttranscriptcluster.db)
+# 
+# ### Display all mappings
+# mogene20sttranscriptcluster()
+# 
+# # # I way
+# # annot <- data.frame(SYMBOL=sapply(contents(mogene20sttranscriptclusterSYMBOL), paste, collapse=", "), ENTREZID=sapply(contents(mogene20sttranscriptclusterENTREZID), paste, collapse=", "), stringsAsFactors = FALSE)
+# 
+# 
+# # II way
+# probes.ALL=row.names(expr)
+# SYMBOL = unlist(mget(probes.ALL, mogene20sttranscriptclusterSYMBOL))
+# ENTREZID = unlist(mget(probes.ALL, mogene20sttranscriptclusterENTREZID))
+# 
+# ### check if it returns always one values - YES
+# mg <- mget(probes.ALL, mogene20sttranscriptclusterENTREZID)
+# table(sapply(mg, length))
+# 
+# 
+# # # IV way
+# # probes.ALL=row.names(expr)
+# # SYMBOLb = sapply(mget(probes.ALL, mogene20sttranscriptclusterSYMBOL), paste, collapse=", ")
+# # ENTREZIDb = sapply(mget(probes.ALL, mogene20sttranscriptclusterENTREZID), paste, collapse=", ")
+# # 
+# # all(SYMBOL == SYMBOLb)
+# 
+# 
+# # # III way
+# # library(annotate)
+# # probes.ALL <- featureNames(eset)
+# # SYMBOL <- getSYMBOL(probes.ALL,"mogene20sttranscriptcluster.db")
+# 
+# annot <- data.frame(SYMBOL = SYMBOL, ENTREZID = ENTREZID , stringsAsFactors = FALSE)
+# 
+# fData(eset) <- annot 
+# 
+# 
+# table(is.na(annot$ENTREZID))
+# table(is.na(annot$SYMBOL))
+# 
+# 
+# eset.org <- eset
 
 
 ###########################################################################
-####### NetAffx Annotation
+####### NetAffx Annotation with getNetAffx()
 ###########################################################################
 
 
@@ -239,184 +241,12 @@ infoNetAffx <- pData(getNetAffx(eset, "transcript"))
 head(infoNetAffx)
 
 
-apply(infoNetAffx, 2, function(cat){sum(is.na(cat))})
 
-all(infoNetAffx$transcriptclusterid == infoNetAffx$probesetid)
-
-sum(infoNetAffx$totalprobes)
-
-
-###########################################################################
-####### Get probe info - probe 2 transcript cluster match
-###########################################################################
-
-
-### try to get info about probe types
-probeInfo <- oligo::getProbeInfo(x, field = c('fid', 'fsetid', 'level', 'type', 'transcript_cluster_id'), probeType = "pm", target='core')
-
-head(probeInfo)
-
-tbl <- table(probeInfo$type, useNA = "always")
-
-sum(tbl)
-
-
-setequal(featureNames(eset), unique(probeInfo$transcript_cluster_id))
-
-
-
-###########################################################################
-### TRY GC content per probe
-###########################################################################
-# probe with higher GC content will have higher background
-
-# pms <- oligo::pm(x, target='core')
-
-pmSeq <- oligo::pmSequence(x, target='core')
-
-
-
-
-library(Biostrings)
-gcCont <- letterFrequency(pmSeq, letters='CG')[,1]
-
-
-probeInfo$gcCont <- gcCont
-
-
-
-###########################################################################
-####### Filtering probes with low expression 
-###########################################################################
-
-eset <- eset.org
-
-
-#### using background information from antigenomic probesets
-
-library(genefilter)
-
-tblNA <- table(infoNetAffx$category, useNA = "always")
-
-antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
-
-
-# bkg <- apply(exprs(eset)[as.character(antigm), ], 2, quantile, probs=0.5)
-# minval <- max(bkg)
-# minval
-
-
-
-bkg <- apply(exprs(eset)[as.character(antigm), ], 2, mean)
-# bkg <- rowMeans( exprs(eset)[as.character(antigm),] )
-
-minval <- mean(bkg)
-minval
-
-
-keep <- genefilter(eset, filterfun(kOverA(3, minval)))
-
-table(keep)
-
-
-eset <- eset.org[keep,]
-
-
-
-
-#################### based on GC content
-
-antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
-
-bgExpr <- exprs(eset)[as.character(antigm),]
-bgExpr
-
-bgProbeInfo <- subset(probeInfo, probeInfo$type == "control->bgp->antigenomic")
-head(bgProbeInfo)
-
-# bgProbeInfoSpl <- split(bgProbeInfo, f = bgProbeInfo$transcript_cluster_id)
-# gcContTrans <- sapply(bgProbeInfoSpl, function(pi) mean(pi[,"gcCont"]))
-
-
-library(plyr)
-
-bgTransInfo <- ddply(bgProbeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
-bgTransInfo
-
-library(matrixStats)
-# ls("package:matrixStats")
-
-
-bgTransInfo$MedianExpr <- rowMedians(bgExpr)
-bgTransInfo$MeanExpr <- rowMeans(bgExpr)
-
-  
-
-
-transInfo <- ddply(probeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
-head(transInfo)
-
-transInfo$gcCont <- round(transInfo$gcCont)
-
-transInfo$minExpr <- factor(transInfo$gcCont, levels = bgTransInfo$gcCont)
-levels(transInfo$minExpr) <- bgTransInfo$MedianExpr
-transInfo$minExpr <- as.numeric(as.character(transInfo$minExpr))
-
-expr <- exprs(eset)
-
-all(rownames(expr) == transInfo$transcript_cluster_id)
-
-
-
-keep <- sapply(1:nrow(expr), function(tr){ sum(expr[tr, ] > transInfo$minExpr[tr]) > 3 } )
-
-table(keep)
-
-
-
-
-  
-###########################################################################
-####### remove control probes == keep main probes
-###########################################################################
-
-
-# source("http://bioconductor.org/biocLite.R")
-# biocLite("affycoretools")
-
-library(affycoretools)
-
-eset.main <- affycoretools::getMainProbes(eset)
-
-
-###########################################################################
-####### Keep probes from chr1-chr19, Y, X
-###########################################################################
-
-
-table(infoNetAffx$seqname, useNA = "always")
-
-keepCHR <- featureNames(eset.main) %in% rownames(infoNetAffx)[which(infoNetAffx$seqname %in% paste0("chr", c(1:19, "Y", "X")), useNames = TRUE)]
-
-table(keepCHR)
-
-eset.main <- eset.main[keepCHR, ]
-
-eset.org <- eset.main
-
-
-###########################################################################
-####### NetAffx Annotation
-###########################################################################
-
-
-# infoNetAffx <- pData(getNetAffx(eset, "transcript"))
-# head(infoNetAffx)
-# dim(infoNetAffx)
-# 
 # apply(infoNetAffx, 2, function(cat){sum(is.na(cat))})
 # 
 # all(infoNetAffx$transcriptclusterid == infoNetAffx$probesetid)
+# 
+# sum(infoNetAffx$totalprobes)
 # 
 # ### check how many probesets have no annotation in fData and in infoNetAffx
 # table(is.na(fData(eset)[,"ENTREZID"]))
@@ -424,13 +254,9 @@ eset.org <- eset.main
 # table(is.na(fData(eset)[,"ENTREZID"]) & is.na(infoNetAffx$geneassignment))
 
 
-
-
-
 ###########################################################################
-####### Get ENSEMBL annotation from files on Affy website
+####### Get annotation from NetAffx files from Affy website
 ### http://www.affymetrix.com/estore/browse/level_three_category_and_children.jsp?category=35868&categoryIdClicked=35868&expand=true&parent=35617
-### http://www.affymetrix.com/analysis/index.affx#1_2
 ###########################################################################
 # source("http://bioconductor.org/biocLite.R")
 # biocLite("AffyCompatible")
@@ -459,43 +285,87 @@ eset.org <- eset.main
 # 
 # fl <- readAnnotation(rsrc, annotation=anno, content=FALSE)
 # 
-fl <- "NetAffx/MoGene-2_0-st-v1.na34.mm10.transcript.csv.zip"
+# 
+# fl <- "NetAffx/MoGene-2_0-st-v1.na34.mm10.transcript.csv.zip"
+# 
+# conn <- unz(fl, "MoGene-2_0-st-v1.na34.mm10.transcript.csv")
+# 
+# readLines(conn, n=20)
+# 
+# infoNetAffx2 <- read.table(conn, header=TRUE, sep=",", as.is = TRUE)
+# 
+# dim(infoNetAffx2)
+# 
+# rownames(infoNetAffx2) <- infoNetAffx2$transcript_cluster_id
+# 
+# apply(infoNetAffx2, 2, function(cat){sum(is.na(cat))})
+# 
+# all(infoNetAffx2$transcript_cluster_id == infoNetAffx2$probeset_id)
+# 
+# 
+# colnames(infoNetAffx) <- colnames(infoNetAffx2)
+# 
+# 
+# probesetID <- "17457722" ## probe set with no ENTREZID
+# 
+# infoNetAffx2[probesetID,]
+# 
+# infoNetAffx[probesetID,]
+# 
+# 
+# 
+# infoNetAffx2[probesetID,] == infoNetAffx[probesetID,]
+# 
+# 
+# infoNetAffx2[probesetID, "mrna_assignment"]
+# 
+# infoNetAffx[probesetID, "mrna_assignment"]
 
-conn <- unz(fl, "MoGene-2_0-st-v1.na34.mm10.transcript.csv")
 
-readLines(conn, n=20)
-
-infoNetAffx2 <- read.table(conn, header=TRUE, sep=",", as.is = TRUE)
-
-dim(infoNetAffx2)
-
-rownames(infoNetAffx2) <- infoNetAffx2$transcript_cluster_id
-
-apply(infoNetAffx2, 2, function(cat){sum(is.na(cat))})
-
-all(infoNetAffx2$transcript_cluster_id == infoNetAffx2$probeset_id)
+###########################################################################
+####### remove control probes == keep main probes
+###########################################################################
 
 
-colnames(infoNetAffx) <- colnames(infoNetAffx2)
+# source("http://bioconductor.org/biocLite.R")
+# biocLite("affycoretools")
 
 
-probesetID <- "17457722"
-
-infoNetAffx2[probesetID,]
-
-infoNetAffx[probesetID,]
+# library(affycoretools)
+# eset.main <- affycoretools::getMainProbes(eset) ### gives different results
 
 
 
-infoNetAffx2[probesetID,] == infoNetAffx[probesetID,]
+table(infoNetAffx$category, useNA = "always")
+
+all(featureNames(eset) == rownames(infoNetAffx))
+
+keepMAIN <- infoNetAffx$category == "main"
+
+eset.main <- eset[keepMAIN, ]
 
 
-infoNetAffx2[probesetID, "mrna_assignment"]
+###########################################################################
+####### Keep probes from chr1-chr19, Y, X
+###########################################################################
 
-infoNetAffx[probesetID, "mrna_assignment"]
+
+table(infoNetAffx$seqname, useNA = "always")
+
+keepCHR <- featureNames(eset.main) %in% rownames(infoNetAffx)[which(infoNetAffx$seqname %in% paste0("chr", c(1:19, "Y", "X")), useNames = TRUE)]
+
+table(keepCHR)
+
+eset.main <- eset.main[keepCHR, ]
 
 
 
+###########################################################################
+####### Get annotation from formated files from Affy website (NetAffx Analysis Center)
+### http://www.affymetrix.com/analysis/index.affx
+###########################################################################
+
+library(limma)
 
 ###### files that are formated for easy load 
 
@@ -506,93 +376,72 @@ annof
 ### does not work
 # anno_list <- read.table(annof[2], header = TRUE, sep = "\t", as.is = TRUE)
 
-############## public_database_references
 
 
-allLines <- readLines(annof[3], n=-1)
-
-pdr <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
-
-colnames(pdr) <- gsub(pattern = " ", replacement = "" ,pdr[1,])
-pdr <- pdr[-1,]
-
-rownames(pdr) <- pdr$TranscriptClusterID
-
-head(pdr)
-dim(pdr)
-
-colnames(pdr)
-
-table(pdr$EntrezGeneID == "---")
-
-table(pdr$GeneSymbol == "---")
-
-
-table(pdr$TranscriptID == "---")
-
-table(pdr[ featureNames(eset.main) ,"TranscriptID"]== "---")
-
-table(pdr[ featureNames(eset.main) ,"GeneSymbol"] == "---")
-
-
-
-
-probesetID <- "17299972"
-
-pdr[probesetID,]
-
-
-pdr[probesetID, "GeneSymbol"]
+# ############## use public_database_references
+# 
+# allLines <- readLines(annof[3], n=-1)
+# 
+# pdr <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+# colnames(pdr) <- gsub(pattern = " ", replacement = "" ,pdr[1,])
+# pdr <- pdr[-1,]
+# rownames(pdr) <- pdr$TranscriptClusterID
+# 
+# head(pdr)
+# dim(pdr)
+# 
+# colnames(pdr)
+# 
+# table(pdr$EntrezGeneID == "---")
+# table(pdr$GeneSymbol == "---")
+# table(pdr$TranscriptID == "---")
+# table(pdr[ featureNames(eset.main) ,"TranscriptID"]== "---")
+# table(pdr[ featureNames(eset.main) ,"GeneSymbol"] == "---")
+# 
+# probesetID <- "17299972" ## probe set with no ENTREZID
+# 
+# pdr[probesetID,]
+# 
+# pdr[probesetID, "GeneSymbol"]
+# 
+# infoNetAffx2[probesetID,]
 
 
 
-infoNetAffx2[probesetID,]
-
-
-
-############## gene_list
+############## use gene_list
 
 allLines <- readLines(annof[2], n=-1)
 
 gl <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
-
 colnames(gl) <- gsub(pattern = " ", replacement = "" ,gl[1,])
 gl <- gl[-1,]
-
 rownames(gl) <- gl$TranscriptClusterID
-
-head(gl)
-
-dim(gl)
 
 colnames(gl)
 
+
+# dim(gl)
+
 table(gl$EntrezGeneID == "---")
-
 table(gl$GeneSymbol == "---")
-
 table(gl$GeneTitle == "---")
 
 
 table(gl[ featureNames(eset.main) ,"GeneSymbol"] == "---")
+table(gl[ featureNames(eset.main) ,"GeneTitle"] == "---")
 
 
 ### list of probe sets with no annotation in the end 
 noAnnot <- featureNames(eset.main)[gl[ featureNames(eset.main) ,"GeneSymbol"] == "---"]
 
-probesetID <- noAnnot[1] 
+# probesetID <- "17422859" ## probe with ENTREZID: Tnfrsf4 22163
+# infoNetAffx2[probesetID, 1:9]
+# gl[probesetID,]
 
 
-
-probesetID <- "17422859"
-
-infoNetAffx2[probesetID,1:9]
-
-gl[probesetID,]
 
 
 annot <- gl[ featureNames(eset.main) ,c("GeneSymbol", "EntrezGeneID", "GeneTitle")]
-
 fData(eset.main) <- annot 
 
 
@@ -617,36 +466,218 @@ mart <- useMart("ensembl", dataset="mmusculus_gene_ensembl")
 
 attr <- listAttributes(mart)
 
-h(attr)
-
 attr[grep("affy", attr$name),]
 
-listFilters(mart)
+# listFilters(mart)
 
 genes <- getBM(attributes = c("ensembl_gene_id","external_gene_name", "description","affy_mogene_2_1_st_v1"), filters="affy_mogene_2_1_st_v1", values=featureNames(eset.main), mart=mart)
 
 dim(genes)
+head(genes)
 
+### clean the description
+genes$description <- strsplit2(genes$description, " \\[Source")[, 1]
+
+
+### some features have multiple ensembl annotation 
 length(unique(genes$affy_mogene_2_1_st_v1))
 
-probesetID <- "17457722"
-
+probesetID <- "17457722" ## probe set with no ENTREZID
 genes[genes$affy_mogene_2_1_st_v1 == probesetID, ]
+gl[probesetID,]
+
+probesetID <- "17422859" ## probe with ENTREZID: Tnfrsf4 22163
+genes[genes$affy_mogene_2_1_st_v1 == probesetID, ]
+gl[probesetID,]
 
 
-
-
-
+### check what are the extra annotations that I get with Ensembl
 noAnnotMart <- genes[genes$affy_mogene_2_1_st_v1 %in% noAnnot, ]
-
+head(noAnnotMart)
+## most of them are the predicted genes
 table(grepl("predicted", noAnnotMart$description))
-
 head(noAnnotMart[!grepl("predicted", noAnnotMart$description), ])
+## for predicted genes the gene symbol starts with "Gm"
+noAnnotMart[grepl("predicted", noAnnotMart$description), "external_gene_name" ]
 
 
 
 
+library(plyr)
 
+genes.m <- ddply(genes, "affy_mogene_2_1_st_v1", summarize, GeneSymbol_Ensembl = paste0(external_gene_name, collapse = " /// "), GeneTitle_Ensembl = paste0(description, collapse = " /// "), EnsemblGeneID = paste0(ensembl_gene_id, collapse = " /// "))
+h(genes.m)
+
+probesetID <- "17422859" ## probe with ENTREZID: Tnfrsf4 22163
+genes.m[genes.m$affy_mogene_2_1_st_v1 == probesetID, ]
+
+
+
+dim(annot)
+
+dim(genes.m)
+
+
+annot.m <- merge(annot, genes.m, by.x = 0, by.y = "affy_mogene_2_1_st_v1", all.x = TRUE, sort = FALSE, )
+colnames(annot.m)[1] <- "ProbesetID"
+rownames(annot.m) <- annot.m[,"ProbesetID"]
+
+annot.m[is.na(annot.m)] <- "---"
+
+
+
+### some checks
+table(annot.m$GeneSymbol == annot.m$GeneSymbol_Ensembl)
+
+table(annot.m$GeneSymbol == "---", !annot.m$GeneSymbol_Ensembl == "---")
+
+
+head(annot.m[annot.m$GeneSymbol == "---" & !annot.m$GeneSymbol_Ensembl == "---", ])
+
+extraAnnot <- !grepl("Gm",annot.m[, "GeneSymbol_Ensembl"]) & annot.m$GeneSymbol == "---" & !annot.m$GeneSymbol_Ensembl == "---"
+
+table(extraAnnot)
+
+annot.m[extraAnnot, c("GeneSymbol_Ensembl", "GeneTitle_Ensembl" )]
+
+
+write.table(annot.m, "Annotation.xls", quote = FALSE, sep = "\t", row.names = FALSE)
+
+fData(eset.main) <- annot.m
+
+
+
+###########################################################################
+####### Get probe info - probe 2 transcript cluster match
+###########################################################################
+
+
+### get probe 2 transcript match
+probeInfo <- oligo::getProbeInfo(x, field = c('fid', 'fsetid', 'level', 'type', 'transcript_cluster_id'), probeType = "pm", target='core')
+
+head(probeInfo)
+
+table(probeInfo$type, useNA = "always")
+
+
+setequal(featureNames(eset), unique(probeInfo$transcript_cluster_id))
+
+
+
+###########################################################################
+### Get GC content per probe
+###########################################################################
+# probe with higher GC content will have higher background
+
+# pms <- oligo::pm(x, target='core')
+
+pmSeq <- oligo::pmSequence(x, target='core')
+
+library(Biostrings)
+gcCont <- letterFrequency(pmSeq, letters='CG')[,1]
+
+table(gcCont)
+
+probeInfo$gcCont <- gcCont
+
+
+
+###########################################################################
+####### Filtering probes with low expression 
+###########################################################################
+
+#### using background information from antigenomic probesets
+
+# library(genefilter)
+# 
+# tblNA <- table(infoNetAffx$category, useNA = "always")
+# 
+# antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
+# 
+# bgExpr <- exprs(eset)[as.character(antigm), ]
+# 
+# 
+# # bkg <- apply(bgExpr, 2, quantile, probs=0.5)
+# # minval <- max(bkg)
+# # minval
+# 
+# 
+# bkg <- apply(bgExpr, 2, mean)
+# # bkg <- rowMeans( bgExpr )
+# 
+# minval <- mean(bkg)
+# minval
+# 
+# keep <- genefilter(eset.main, filterfun(kOverA(3, minval)))
+# table(keep)
+# 
+# eset.main <- eset.main[keep,]
+
+
+
+
+#################### based on GC content
+
+### Get the background expression levels for different GC ammount
+
+antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
+
+bgExpr <- exprs(eset)[as.character(antigm),]
+bgExpr
+
+bgProbeInfo <- subset(probeInfo, probeInfo$type == "control->bgp->antigenomic")
+
+# bgProbeInfoSpl <- split(bgProbeInfo, f = bgProbeInfo$transcript_cluster_id)
+# gcContTrans <- sapply(bgProbeInfoSpl, function(pi) mean(pi[,"gcCont"]))
+
+
+library(plyr)
+
+bgTransInfo <- ddply(bgProbeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
+
+library(matrixStats)
+# ls("package:matrixStats")
+
+
+bgTransInfo$MedianExpr <- rowMedians(bgExpr)
+bgTransInfo$MeanExpr <- rowMeans(bgExpr)
+bgTransInfo
+
+pdf("gc.pdf")
+plot(bgTransInfo$gcCont, bgTransInfo$MedianExpr, type = "p", xlab = "GC content", ylab = "Median log2 expression", pch = 16, col = "darkcyan", cex = 2)
+dev.off()
+
+
+### Get the GC content for all the probe sets
+transInfo <- ddply(probeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
+head(transInfo)
+
+transInfo$gcCont <- round(transInfo$gcCont)
+transInfo$minExpr <- factor(transInfo$gcCont, levels = bgTransInfo$gcCont)
+levels(transInfo$minExpr) <- bgTransInfo$MedianExpr
+transInfo$minExpr <- as.numeric(as.character(transInfo$minExpr))
+head(transInfo)
+
+
+expr <- exprs(eset)
+
+all(rownames(expr) == transInfo$transcript_cluster_id)
+
+
+keep <- sapply(1:nrow(expr), function(tr){ sum(expr[tr, ] > transInfo$minExpr[tr]) >= ncol(expr) } )
+
+table(keep)
+
+
+keepEXPR <- featureNames(eset.main) %in% featureNames(eset)[keep]
+
+table(keepEXPR)
+
+  
+eset.main <- eset.main[keepEXPR, ]
+
+
+eset.main
 
 
 ###########################################################################
@@ -657,18 +688,18 @@ head(noAnnotMart[!grepl("predicted", noAnnotMart$description), ])
 ### sort samples by groups
 ord <- order(targets$groups)
 targets <- targets[ord, ]
-eset.org <- eset.org[ ,ord]
+eset.main <- eset.main[ ,ord]
 
-# sampleNames(eset.org)
+# sampleNames(eset.main)
 # targets$FileName
 
-
+### keep only leukemia and control CD4+, CD4+CD8+ and CD8+ samples
 samples2keep <- grepl("leukemia|control_CD", targets$labels)
 
 treatments <- data.frame(Treatment = as.character(targets$groups[samples2keep]))
 treatments
 
-eset <- eset.org[,samples2keep] 
+eset <- eset.main[, samples2keep] 
 
 design <- model.matrix(~ 0 + Treatment, data=treatments)
 rownames(design) <- targets$labels[samples2keep]
@@ -677,7 +708,7 @@ design
 
 fit <- lmFit(eset, design)
 
-contrasts <- cbind(CtrlCD4 = c(1, 0, 0, -1), CtrlCD4CD8 = c(0, 1, 0, -1), CtrlCD8 = c(0, 0, 1, -1))
+contrasts <- cbind(CtrlCD4 = c(-1, 0, 0, 1), CtrlCD4CD8 = c(0, -1, 0, 1), CtrlCD8 = c(0, 0, -1, 1))
 contrasts
 
 
@@ -685,9 +716,18 @@ fit2 <- contrasts.fit(fit, contrasts)
 
 fit2 <- eBayes(fit2, trend = TRUE)
 
-pdf("plotSA.pdf")
+pdf("plotSA_trend.pdf")
 plotSA(fit2)
 dev.off()
+
+
+# fit2 <- contrasts.fit(fit, contrasts)
+# 
+# fit2 <- eBayes(fit2)
+# 
+# pdf("plotSA.pdf")
+# plotSA(fit2)
+# dev.off()
 
 
 results <- decideTests(fit2)
@@ -738,7 +778,7 @@ for(i in 1:length(coefs)){
   coef <- coefs[i]  
   table <- topTable(fit2, coef=coef, n=Inf)
   hist(table$P.Value, breaks = 100, main = coef, xlab = "P-values")
-  hist(table$adj.P.Val, breaks = 100, main = coef, xlab = "Adjusted p-values")
+  #hist(table$adj.P.Val, breaks = 100, main = coef, xlab = "Adjusted p-values")
   
 }
 dev.off()
@@ -781,7 +821,7 @@ for(i in 1:length(coefs)){
   ### keep order of genes as in tt
   df.m$Gene <- factor(df.m$Gene, levels = topp)
   ### add Entrez ID to the facet labels
-  lab.fct <- paste0(topp, "\n Entrez ID: ", tt[topp, "ENTREZID"])
+  lab.fct <- paste0(topp, "\n", strsplit2(tt[topp, "GeneSymbol"], " /// ")[,1])
   levels(df.m$Gene) <- lab.fct
   
   ggp <- ggplot(df.m, aes(x = Sample, y = Expression)) +  
@@ -792,7 +832,7 @@ for(i in 1:length(coefs)){
     geom_bar(stat = "identity", colour = targets$colors[samples2keep], fill = targets$colors[samples2keep]) +
     facet_wrap(~ Gene, scales="free_y", ncol=4) 
   
-  pdf(paste0("topExpressionBarPlot_",coef,".pdf"))
+  pdf(paste0("topExpressionBarPlot_",coef,".pdf"), 11, 11)
   print(ggp)    
   dev.off()
   

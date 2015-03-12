@@ -5,11 +5,11 @@ date: "25 Feb 2015"
 output: html_document
 ---
 
-## Data and experiment description
+# Data and experiment description
 
 Affymetrix Mouse Gene 2.0 ST arrays
 
-## Prepare data
+# Prepare data
 
 ```{r setup, echo = FALSE}
 opts_knit$set(root.dir = "/home/Shared/data/array/Microarray_Edwin")
@@ -45,7 +45,7 @@ legend("topright", legend = targets$labels, col =  targets$colors, lty = 1, lwd 
 
 ```
 
-#### Normalize data with probe-level model
+# Normalize data with probe-level model
 
 Run `fitProbeLevelModel` and create NUSE and RLE plots (https://genevestigator.com/userdocs/manual/qc.html).
 
@@ -60,7 +60,7 @@ oligo::RLE(fitplm, col = targets$colors, names = targets$labels, las=2)
 
 ```
 
-#### Normalize data with RMA method
+# Normalize data with RMA method
 
 ```{r}
 eset <- oligo::rma(x) ## Is the expression in log2 scale?
@@ -101,83 +101,153 @@ ggdendrogram(hc, theme_dendro = TRUE) + theme(axis.text.x = element_text(colour 
 
 ```
 
-#### Get annotation of probesets
+# Get NetAffx annotation of probesets
 
 ```{r}
-
-expr <- data.frame(exprs(eset))
-
-library(mogene20sttranscriptcluster.db)
-
-probes.ALL=row.names(expr)
-SYMBOL = unlist(mget(probes.ALL, mogene20sttranscriptclusterSYMBOL))
-ENTREZID = unlist(mget(probes.ALL, mogene20sttranscriptclusterENTREZID))
-
-
-annot <- data.frame(SYMBOL = SYMBOL, ENTREZID = ENTREZID , stringsAsFactors = FALSE)
-
-fData(eset) <- annot 
-
-eset.org <- eset
-
-###
+####### NetAffx Annotation with getNetAffx()
 
 infoNetAffx <- pData(getNetAffx(eset, "transcript"))
-
-
-```
-
-
-
-#### Filtering
-
-Filter probesets with low expression. For that use the background information from antigenomic probesets.
-
-```{r}
-library(genefilter)
-
-table(infoNetAffx$category, useNA = "always")
-
-antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
-
-# bkg <- apply(exprs(eset)[as.character(antigm), ], 2, mean)
-bkg <- rowMeans( exprs(eset)[as.character(antigm),] )
-minval <- mean(bkg)
-minval
-
-keep <- genefilter(eset, filterfun(kOverA(3, minval)))
-
-table(keep)
-
-eset <- eset.org[keep,]
+colnames(infoNetAffx)
 
 ```
 
+
+
+# Filtering
 
 Keep only the main probes.
 
-```{r}
-library(affycoretools)
 
-eset <- affycoretools::getMainProbes(eset)
+```{r}
+table(infoNetAffx$category, useNA = "always")
+
+keepMAIN <- infoNetAffx$category == "main"
+
+eset.main <- eset[keepMAIN, ]
 
 ```
+
 
 
 Keep only the probes that come from chr 1-19, X and Y.
 
 ```{r}
-
-keepCHR <- featureNames(eset) %in% rownames(infoNetAffx)[which(infoNetAffx$seqname %in% paste0("chr", c(1:19, "Y", "X")), useNames = TRUE)]
+keepCHR <- featureNames(eset.main) %in% rownames(infoNetAffx)[which(infoNetAffx$seqname %in% paste0("chr", c(1:19, "Y", "X")), useNames = TRUE)]
 
 table(keepCHR)
 
-eset <- eset[keepCHR, ]
+eset.main <- eset.main[keepCHR, ]
 
-eset.org <- eset
-
-eset.org
 ```
+
+
+# Get annotation from formated files from Affy website
+
+http://www.affymetrix.com/analysis/index.affx
+
+```{r}
+library(limma)
+
+### files that are formated for easy load 
+annof <- list.files("NetAffx", pattern = ".tsv", full.names = TRUE)
+annof
+
+### use gene_list
+
+allLines <- readLines(annof[2], n=-1)
+
+gl <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+colnames(gl) <- gsub(pattern = " ", replacement = "" ,gl[1,])
+gl <- gl[-1,]
+rownames(gl) <- gl$TranscriptClusterID
+
+colnames(gl)
+
+annot <- gl[ featureNames(eset.main) ,c("GeneSymbol", "EntrezGeneID", "GeneTitle")]
+fData(eset.main) <- annot 
+
+```
+
+
+# Filtering probe sets with low expression 
+
+Filter probesets with low expression. For that use the background information from antigenomic probesets and GC content.
+
+```{r}
+### Get probe 2 transcript match
+probeInfo <- oligo::getProbeInfo(x, field = c('fid', 'fsetid', 'level', 'type', 'transcript_cluster_id'), probeType = "pm", target='core')
+
+### Get GC content per probe
+
+
+pmSeq <- oligo::pmSequence(x, target='core')
+
+library(Biostrings)
+gcCont <- letterFrequency(pmSeq, letters='CG')[,1]
+
+table(gcCont)
+
+probeInfo$gcCont <- gcCont
+
+### Get the background expression levels for different GC ammount
+
+antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
+
+bgExpr <- exprs(eset)[as.character(antigm),]
+bgExpr
+
+bgProbeInfo <- subset(probeInfo, probeInfo$type == "control->bgp->antigenomic")
+
+# bgProbeInfoSpl <- split(bgProbeInfo, f = bgProbeInfo$transcript_cluster_id)
+# gcContTrans <- sapply(bgProbeInfoSpl, function(pi) mean(pi[,"gcCont"]))
+
+
+library(plyr)
+
+bgTransInfo <- ddply(bgProbeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
+
+library(matrixStats)
+# ls("package:matrixStats")
+
+
+bgTransInfo$MedianExpr <- rowMedians(bgExpr)
+bgTransInfo$MeanExpr <- rowMeans(bgExpr)
+bgTransInfo
+
+
+### Probe with higher GC content will have higher background
+plot(bgTransInfo$gcCont, bgTransInfo$MedianExpr, type = "p", xlab = "GC content", ylab = "Median log2 expression", pch = 16, col = "darkcyan", cex = 2)
+
+
+
+### Get the GC content for all the probe sets
+transInfo <- ddply(probeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
+
+transInfo$gcCont <- round(transInfo$gcCont)
+transInfo$minExpr <- factor(transInfo$gcCont, levels = bgTransInfo$gcCont)
+levels(transInfo$minExpr) <- bgTransInfo$MedianExpr
+transInfo$minExpr <- as.numeric(as.character(transInfo$minExpr))
+head(transInfo)
+
+
+expr <- exprs(eset)
+keep <- sapply(1:nrow(expr), function(tr){ sum(expr[tr, ] > transInfo$minExpr[tr]) >= ncol(expr) } )
+
+keepEXPR <- featureNames(eset.main) %in% featureNames(eset)[keep]
+
+table(keepEXPR)
+
+eset.main <- eset.main[keepEXPR, ]
+
+eset.main
+
+```
+
+
+
+
+
+
 
 
 
@@ -186,11 +256,11 @@ eset.org
 Compare leukemia samples versus 3 different controls: CD4+, CD4+CD8+ and CD8+.
 
 ```{r}
-
 ### sort samples by groups
 ord <- order(targets$groups)
 targets <- targets[ord, ]
-eset.org <- eset.org[ ,ord]
+eset.main <- eset.main[ ,ord]
+
 
 ### keep only leukemia and control CD4+, CD4+CD8+ and CD8+ samples
 samples2keep <- grepl("leukemia|control_CD", targets$labels)
@@ -198,16 +268,18 @@ samples2keep <- grepl("leukemia|control_CD", targets$labels)
 treatments <- data.frame(Treatment = as.character(targets$groups[samples2keep]))
 treatments
 
-eset <- eset.org[,samples2keep] 
+eset <- eset.main[,samples2keep] 
 
 design <- model.matrix(~ 0 + Treatment, data=treatments)
 rownames(design) <- targets$labels[samples2keep]
 design
 
+
 fit <- lmFit(eset, design)
 
-contrasts <- cbind(CtrlCD4 = c(1, 0, 0, -1), CtrlCD4CD8 = c(0, 1, 0, -1), CtrlCD8 = c(0, 0, 1, -1))
+contrasts <- cbind(CtrlCD4 = c(-1, 0, 0, 1), CtrlCD4CD8 = c(0, -1, 0, 1), CtrlCD8 = c(0, 0, -1, 1))
 contrasts
+
 
 fit2 <- contrasts.fit(fit, contrasts)
 
@@ -279,8 +351,8 @@ for(i in 1:length(coefs)){
   df.m <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
   ### keep order of genes as in tt
   df.m$Gene <- factor(df.m$Gene, levels = topp)
-  ### add Entrez ID to the facet labels
-  lab.fct <- paste0(topp, "\n Entrez ID: ", tt[topp, "ENTREZID"])
+  ### add Gene Symbol to the facet labels
+  lab.fct <- paste0(topp, "\n", tt[topp, "GeneSymbol"])
   levels(df.m$Gene) <- lab.fct
   
   ggp <- ggplot(df.m, aes(x = Sample, y = Expression)) +  
