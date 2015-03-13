@@ -331,6 +331,8 @@ fit2 <- contrasts.fit(fit, contrasts)
 
 fit2 <- eBayes(fit2, trend = TRUE)
 
+plotSA(fit2)
+
 results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=0)
 summary(results)
 
