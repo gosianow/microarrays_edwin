@@ -164,7 +164,43 @@ rownames(gl) <- gl$TranscriptClusterID
 colnames(gl)
 
 annot <- gl[ featureNames(eset.main) ,c("GeneSymbol", "EntrezGeneID", "GeneTitle")]
-fData(eset.main) <- annot 
+
+
+```
+
+# Get ENSEMBL annotation using biomaRt
+
+```{r}
+
+library(biomaRt)
+
+mart <- useMart("ensembl")
+
+mart <- useMart("ensembl", dataset="mmusculus_gene_ensembl")
+
+attr <- listAttributes(mart)
+
+attr[grep("affy", attr$name),]
+
+genes <- getBM(attributes = c("ensembl_gene_id","external_gene_name", "description","affy_mogene_2_1_st_v1"), filters="affy_mogene_2_1_st_v1", values=featureNames(eset.main), mart=mart)
+
+### clean the description
+genes$description <- strsplit2(genes$description, " \\[Source")[, 1]
+
+### Merge the info about multiple genes into one string
+library(plyr)
+
+genes.m <- ddply(genes, "affy_mogene_2_1_st_v1", summarize, GeneSymbol_Ensembl = paste0(external_gene_name, collapse = " /// "), GeneTitle_Ensembl = paste0(description, collapse = " /// "), EnsemblGeneID = paste0(ensembl_gene_id, collapse = " /// "))
+
+annot.m <- merge(annot, genes.m, by.x = 0, by.y = "affy_mogene_2_1_st_v1", all.x = TRUE, sort = FALSE, )
+colnames(annot.m)[1] <- "ProbesetID"
+rownames(annot.m) <- annot.m[,"ProbesetID"]
+
+annot.m[is.na(annot.m)] <- "---"
+
+write.table(annot.m, "Annotation.xls", quote = FALSE, sep = "\t", row.names = FALSE)
+
+fData(eset.main) <- annot.m
 
 ```
 
@@ -177,63 +213,77 @@ Filter probesets with low expression. For that use the background information fr
 ### Get probe 2 transcript match
 probeInfo <- oligo::getProbeInfo(x, field = c('fid', 'fsetid', 'level', 'type', 'transcript_cluster_id'), probeType = "pm", target='core')
 
-### Get GC content per probe
-
-
 pmSeq <- oligo::pmSequence(x, target='core')
 
+### Get GC content per probe
 library(Biostrings)
 gcCont <- letterFrequency(pmSeq, letters='CG')[,1]
-
-table(gcCont)
 
 probeInfo$gcCont <- gcCont
 
 ### Get the background expression levels for different GC ammount
-
 antigm <- infoNetAffx[infoNetAffx$category == "control->bgp->antigenomic", "probesetid"]
 
-bgExpr <- exprs(eset)[as.character(antigm),]
-bgExpr
+bgExpr <- exprs(eset)[as.character(antigm), targets$labels != "control_HeLa"]
 
 bgProbeInfo <- subset(probeInfo, probeInfo$type == "control->bgp->antigenomic")
 
-# bgProbeInfoSpl <- split(bgProbeInfo, f = bgProbeInfo$transcript_cluster_id)
-# gcContTrans <- sapply(bgProbeInfoSpl, function(pi) mean(pi[,"gcCont"]))
+### see how many probes are for each GC content
+table(bgProbeInfo$gcCont)
 
 
 library(plyr)
+library(ggplot2)
+library(reshape2)
 
 bgTransInfo <- ddply(bgProbeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
 
-library(matrixStats)
-# ls("package:matrixStats")
-
-
-bgTransInfo$MedianExpr <- rowMedians(bgExpr)
-bgTransInfo$MeanExpr <- rowMeans(bgExpr)
-bgTransInfo
-
-
-### Probe with higher GC content will have higher background
-plot(bgTransInfo$gcCont, bgTransInfo$MedianExpr, type = "p", xlab = "GC content", ylab = "Median log2 expression", pch = 16, col = "darkcyan", cex = 2)
-
-
+expr <- exprs(eset.main)[,targets$labels != "control_HeLa"]
 
 ### Get the GC content for all the probe sets
 transInfo <- ddply(probeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
-
+rownames(transInfo) <- transInfo$transcript_cluster_id
+transInfo <- transInfo[rownames(expr), ]
 transInfo$gcCont <- round(transInfo$gcCont)
+
+table(transInfo$gcCont)
+
+### plot expression for background and main probes across different GC content
+bgdf <- data.frame(bgTransInfo, bgExpr)
+
+bgdf.m <- melt(bgdf, id.vars = c("transcript_cluster_id", "gcCont"), variable.name = "Samples", value.name = "Expression")
+
+df <- data.frame(transInfo, expr)
+
+df.m <- melt(df, id.vars = c("transcript_cluster_id", "gcCont"), variable.name = "Samples", value.name = "Expression")
+
+df.m$Type <- "Main"
+bgdf.m$Type <- "BGP"
+
+df.all <- rbind(df.m, bgdf.m)
+df.all$gcCont <- factor(df.all$gcCont, levels = 3:25)
+
+ggp <- ggplot(data = df.all, aes(x = gcCont, y = Expression, fill = Type)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position="top")
+
+print(ggp)
+
+
+### Use median expression as cutoff 
+library(matrixStats)
+
+bgTransInfo$MedianExpr <- rowMedians(bgExpr)
+bgTransInfo$Q075Expr <- rowQuantiles(bgExpr, probs = 0.75)
+bgTransInfo
+
 transInfo$minExpr <- factor(transInfo$gcCont, levels = bgTransInfo$gcCont)
 levels(transInfo$minExpr) <- bgTransInfo$MedianExpr
+# levels(transInfo$minExpr) <- bgTransInfo$Q075Expr
 transInfo$minExpr <- as.numeric(as.character(transInfo$minExpr))
-head(transInfo)
 
-
-expr <- exprs(eset)
-keep <- sapply(1:nrow(expr), function(tr){ sum(expr[tr, ] > transInfo$minExpr[tr]) >= ncol(expr) } )
-
-keepEXPR <- featureNames(eset.main) %in% featureNames(eset)[keep]
+keepEXPR <- sapply(1:nrow(expr), function(tr){ sum(expr[tr, ] > transInfo$minExpr[tr]) >= ncol(expr) } )
 
 table(keepEXPR)
 
@@ -242,10 +292,6 @@ eset.main <- eset.main[keepEXPR, ]
 eset.main
 
 ```
-
-
-
-
 
 
 
@@ -285,10 +331,14 @@ fit2 <- contrasts.fit(fit, contrasts)
 
 fit2 <- eBayes(fit2, trend = TRUE)
 
-plotSA(fit2)
-
-results <- decideTests(fit2)
+results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=0)
 summary(results)
+
+## with the FC cutoff
+results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=1)
+summary(results)
+
+write.fit(fit2, results = results, file = "results.xls", adjust = "BH")
 
 vennDiagram(results,include=c("up", "down"))
 
@@ -298,10 +348,9 @@ vennDiagram(results,include=c("up", "down"))
 
 ```{r}
 
-limma::plotMA(fit2, coef = "CtrlCD4", status = p.adjust(fit2$p.value[, "CtrlCD4"], method="BH") < 0.05)
-limma::plotMA(fit2, coef = "CtrlCD4CD8", status = p.adjust(fit2$p.value[, "CtrlCD4CD8"], method="BH") < 0.05)
-limma::plotMA(fit2, coef = "CtrlCD8", status = p.adjust(fit2$p.value[, "CtrlCD8"], method="BH") < 0.05)
-
+limma::plotMA(fit2, coef = "CtrlCD4", status = results[, "CtrlCD4"])
+limma::plotMA(fit2, coef = "CtrlCD4CD8", status = results[, "CtrlCD4CD8"])
+limma::plotMA(fit2, coef = "CtrlCD8", status = results[, "CtrlCD8"])
 
 library(ggplot2)
 
@@ -312,7 +361,7 @@ for(i in 1:length(coefs)){
   coef <- coefs[i]
 
   table <- topTable(fit2, coef=coef, n=Inf)
-  table$threshold = as.factor(table$adj.P.Val < 0.05)
+  table$threshold = as.factor(table$adj.P.Val < 0.05 & abs(table$logFC) > 1)
   gg1 <- ggplot(data=table, aes(x=logFC, y=-log10(P.Value), colour=threshold)) +
     geom_point(alpha=0.4, size=1.75) + theme_bw() +ggtitle(coef) +
     theme(legend.position = "none") +
@@ -334,17 +383,17 @@ library(reshape2)
 
 topn <- 20
 exp <- exprs(eset)
-x <- 1:ncol(exp)
 
 for(i in 1:length(coefs)){
   # i = 1
   coef <- coefs[i]
   
-  tt <- topTable(fit2, coef=coef, n=Inf)
+  tt <- topTable(fit2, coef=coef, n=Inf, p.value=0.05, lfc=1)
+  write.table(tt, paste0("topTable_",coef,".xls"), quote = FALSE, sep = "\t", row.names = FALSE)
+  
   print(coef)
-  print(head(tt, topn))
-  write.table(tt, paste0("topTable_",coef,".xls"), quote = FALSE, sep = "\t")
-
+  print(head(tt[, c("GeneSymbol", "logFC", "AveExpr", "t", "P.Value", "adj.P.Val", "B")], topn))
+  
   topp <- rownames(tt)[1:topn]
   
   df <- data.frame(Gene = topp, exp[topp,])
@@ -352,7 +401,7 @@ for(i in 1:length(coefs)){
   ### keep order of genes as in tt
   df.m$Gene <- factor(df.m$Gene, levels = topp)
   ### add Gene Symbol to the facet labels
-  lab.fct <- paste0(topp, "\n", tt[topp, "GeneSymbol"])
+  lab.fct <- paste0(topp, "\n", strsplit2(tt[topp, "GeneSymbol"], " /// ")[,1])
   levels(df.m$Gene) <- lab.fct
   
   ggp <- ggplot(df.m, aes(x = Sample, y = Expression)) +  
@@ -371,12 +420,168 @@ for(i in 1:length(coefs)){
 ```
 
 
+# GO analysis
+
+```{r}
+
+library(topGO)
+library(Rgraphviz)
+
+
+affyLib <- "mogene20sttranscriptcluster.db"
+
+coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8")
+coef <- coefs[1]
+
+tt <- topTable(fit2, coef=coef, n=Inf)
+geneList <- rep(0, nrow(tt))
+names(geneList) <- rownames(tt)
+geneList[tt$adj.P.Val < 0.05 & abs(tt$logFC) > 1] <- 1
+table(geneList)
+
+### Function used to create new topGOdata object
+fun.gene.sel <- function(geneList) {
+  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
+}
+
+
+allRes.Fisher.merged <- NULL
+allRes.Fisher.elim.merged <- NULL
+
+
+for(go in c("BP","MF","CC")){
+  # go = "BP"
+  
+  sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", coef), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
+  
+  print(sampleGOdata)
+  
+  
+  # Fisher's exact test which is based on gene counts, and a Kolmogorov-Smirnov like test which computes enrichment based on gene scores
+  # For the method classic each GO category is tested independently
+  
+  resultFisher <- runTest(sampleGOdata, algorithm = "classic", statistic = "fisher")
+  resultFisher.elim <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
+  
+  
+  pValues.Fisher <- score(resultFisher)
+  topNodes.Fisher <- length(pValues.Fisher)
+  
+  pValues.Fisher.elim <- score(resultFisher.elim)
+  topNodes.Fisher.elim <- length(pValues.Fisher.elim)
+  
+  
+  allRes.Fisher <- GenTable(sampleGOdata, classicFisher = resultFisher, elimFisher = resultFisher.elim, orderBy = "classicFisher", ranksOf = "elimFisher", topNodes = topNodes.Fisher) 
+  
+  allRes.Fisher$GO <- go   
+  allRes.Fisher.merged <- rbind(allRes.Fisher.merged, allRes.Fisher)
+  
+  
+  allRes.Fisher.elim <- GenTable(sampleGOdata, classicFisher = resultFisher, elimFisher = resultFisher.elim, orderBy = "elimFisher", ranksOf = "classicFisher", topNodes = topNodes.Fisher.elim)      
+  
+  allRes.Fisher.elim$GO <- go 
+  allRes.Fisher.elim.merged <- rbind(allRes.Fisher.elim.merged, allRes.Fisher.elim)
+  
+#   showSigOfNodes(sampleGOdata, score(resultFisher), firstSigNodes = 5, useInfo = 'all')
+#   showSigOfNodes(sampleGOdata, score(resultFisher.elim), firstSigNodes = 5, useInfo = 'all')
+
+  
+}
+
+
+allRes.Fisher.merged$classicFisher.adj <- p.adjust(allRes.Fisher.merged$classicFisher, method = "BH")
+allRes.Fisher.merged <- allRes.Fisher.merged[order(allRes.Fisher.merged$classicFisher.adj, decreasing = FALSE), ]
+
+head(allRes.Fisher.merged, 20)
+
+
+write.table(allRes.Fisher.merged, paste("GO_Fisher_",coef,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+allRes.Fisher.elim.merged$elimFisher.adj <- p.adjust(allRes.Fisher.elim.merged$elimFisher, method = "BH")
+allRes.Fisher.elim.merged <- allRes.Fisher.elim.merged[order(allRes.Fisher.elim.merged$elimFisher.adj, decreasing = FALSE), ]
+
+head(allRes.Fisher.elim.merged, 20)
+
+write.table(allRes.Fisher.elim.merged, paste("GO_Fisher_elim_",coef,".xls", sep=""), sep="\t", row.names=F)
 
 
 
+```
+
+In GO analysis should I merge and adjust the p-values from different go or keep it separetely?
+Should I use classic Fisher or elim Fisher?
+
+
+# Gene set enrichment analysis with C7  Immunologic genes sets
+
+```{r}
+# gene sets from MSigDB with ENTREZ IDs
+load("MSigDB_v4_0/mouse_c7_v4.rdata")
+
+mysets <- Mm.c7
+length(mysets)
+
+### Create an Index for camera
+annot <- fData(eset.main)
+
+EntrezGeneID <- strsplit2(annot$EntrezGeneID, " /// ")
+
+nrow = nrow(EntrezGeneID)
+ncol = ncol(EntrezGeneID)
+
+Index <- lapply(mysets, function(ms){  
+  eg <- matrix(EntrezGeneID %in% ms, nrow = nrow, ncol = ncol, byrow = FALSE)
+  rowSums(eg) > 0 
+  })
+
+### sort samples by groups
+ord <- order(targets$groups)
+targets <- targets[ord, ]
+eset.main <- eset.main[ ,ord]
+
+### keep only leukemia and control CD4+, CD4+CD8+ and CD8+ samples
+samples2keep <- grepl("leukemia|control_CD", targets$labels)
+
+treatments <- data.frame(Treatment = as.character(targets$groups[samples2keep]))
+treatments
+
+eset <- eset.main[, samples2keep] 
+
+design <- model.matrix(~ 0 + Treatment, data=treatments)
+rownames(design) <- targets$labels[samples2keep]
+design
+
+
+contrasts <- cbind(CtrlCD4 = c(-1, 0, 0, 1), CtrlCD4CD8 = c(0, -1, 0, 1), CtrlCD8 = c(0, 0, -1, 1))
+contrasts
 
 
 
+gsea <- camera(y = eset, index=Index, design=design, contrast=contrasts[,"CtrlCD4"], trend.var=TRUE)
+
+head(gsea)
+
+table(gsea$FDR < 0.05)
+
+
+gsea <- camera(y = eset, index=Index, design=design, contrast=contrasts[,"CtrlCD4CD8"], trend.var=TRUE)
+
+head(gsea)
+
+table(gsea$FDR < 0.05)
+
+
+
+gsea <- camera(y = eset, index=Index, design=design, contrast=contrasts[,"CtrlCD8"], trend.var=TRUE)
+
+head(gsea)
+
+table(gsea$FDR < 0.05)
+
+
+
+```
 
 
 
