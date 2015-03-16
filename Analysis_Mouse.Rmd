@@ -1,7 +1,7 @@
 ---
 title: "DE analysis for Edwin"
 author: "Gosia Nowicka"
-date: "25 Feb 2015"
+date: "16 Mar 2015"
 output: html_document
 ---
 
@@ -80,23 +80,13 @@ mds.dendo <- mds <- plotMDS(eset, top=1000, col = targets$colors, labels = label
 ### plot only points
 plot(mds$x, mds$y, pch = 16, cex = 1.5, col = targets$colors)
 
-### zoom in
-mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2, xlim = c(-1.5, 1.5), ylim = c(-1, 1))
-
-### plot MDS for all samples except HeLa and whole bone marrow controls 
-ex <- !targets$labels %in% c("control_wholeBoneMarrow", "control_HeLa")
-mds <- plotMDS(eset[, ex], top=1000, col = targets$colors[ex], labels = labels[ex], cex = 1)
-
-### plot only points
-plot(mds$x, mds$y, pch = 16, cex = 1.5, col = targets$colors[ex] )
-
 
 library(ggplot2)
 library(ggdendro)
 
 d <- mds.dendo$distance.matrix
 rownames(d) <- labels
-hc <- hclust(as.dist(d), method = "complete")
+hc <- hclust(as.dist(d), method = "single")
 ggdendrogram(hc, theme_dendro = TRUE) + theme(axis.text.x = element_text(colour = targets$colors[hc$order], size = 13)) 
 
 ```
@@ -243,7 +233,7 @@ transInfo <- ddply(probeInfo, "transcript_cluster_id", summarize,  gcCont=mean(g
 rownames(transInfo) <- transInfo$transcript_cluster_id
 transInfo <- transInfo[rownames(expr), ]
 transInfo$gcCont <- round(transInfo$gcCont)
-
+### see what is the average GC content for main probe sets
 table(transInfo$gcCont)
 
 ### plot expression for background and main probes across different GC content
@@ -272,16 +262,14 @@ print(ggp)
 ### Use median expression as cutoff 
 library(matrixStats)
 
-bgTransInfo$MedianExpr <- rowMedians(bgExpr)
-bgTransInfo$Q075Expr <- rowQuantiles(bgExpr, probs = 0.75)
+bgTransInfo$Q095Expr <- rowQuantiles(bgExpr, probs = 0.95)
 bgTransInfo
 
 transInfo$minExpr <- factor(transInfo$gcCont, levels = bgTransInfo$gcCont)
-levels(transInfo$minExpr) <- bgTransInfo$MedianExpr
-# levels(transInfo$minExpr) <- bgTransInfo$Q075Expr
+levels(transInfo$minExpr) <- bgTransInfo$Q095Expr
 transInfo$minExpr <- as.numeric(as.character(transInfo$minExpr))
 
-keepEXPR <- sapply(1:nrow(expr), function(tr){ sum(expr[tr, ] > transInfo$minExpr[tr]) >= ncol(expr) } )
+keepEXPR <- sapply(1:nrow(expr), function(tr){ sum(expr[tr, ] > transInfo$minExpr[tr]) > 3 } )
 
 table(keepEXPR)
 
@@ -338,9 +326,36 @@ summary(results)
 results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=1)
 summary(results)
 
-write.fit(fit2, results = results, file = "results.xls", adjust = "BH")
 
 vennDiagram(results,include=c("up", "down"))
+
+
+### save all results with better order
+resExpr <- round(exprs(eset), 2)
+colnames(resExpr) <- paste0(treatments$Treatment, "_", colnames(resExpr))
+resCoeff <- fit2$coefficients
+colnames(resCoeff) <- paste0(colnames(resCoeff), "_coeffs")
+resT <- fit2$t
+colnames(resT) <- paste0(colnames(resT), "_t")
+resPValue <- fit2$p.value
+colnames(resPValue) <- paste0(colnames(resPValue), "_PValues")
+resPValueAdj <- apply(fit2$p.value, 2, p.adjust, method = "BH")
+colnames(resPValueAdj) <- paste0(colnames(resPValueAdj), "_AdjPValues")
+resGenes <- fit2$genes
+resRes <- results
+colnames(resRes) <- paste0(colnames(resRes), "_Results")
+
+coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8")
+stats <- c("coeffs", "t", "PValues", "AdjPValues", "Results")
+colOrder <- paste(rep(coefs, each = 5 ), rep(stats, 3), sep = "_")
+
+
+resDE <- data.frame(resCoeff, resT, resPValue, resPValueAdj, resRes)[, colOrder]
+
+resAll <- cbind(resGenes, resDE, resExpr )
+
+write.table(resAll, file = "Comp1_DE_results_All.xls", quote = FALSE, sep = "\t", row.names = FALSE)
+
 
 ```
 
@@ -393,10 +408,11 @@ for(i in 1:length(coefs)){
   coef <- coefs[i]
   
   tt <- topTable(fit2, coef=coef, n=Inf, p.value=0.05, lfc=1)
-  write.table(tt, paste0("topTable_",coef,".xls"), quote = FALSE, sep = "\t", row.names = FALSE)
+  ### in the report display only first gene symbol
+  GeneSymbol <- strsplit2(head(tt[,"GeneSymbol"], topn), " /// ")[,1]
   
   print(coef)
-  print(head(tt[, c("GeneSymbol", "logFC", "AveExpr", "t", "P.Value", "adj.P.Val", "B")], topn))
+  print(data.frame(GeneSymbol = GeneSymbol, head(tt[, c("logFC", "AveExpr", "t", "P.Value", "adj.P.Val", "B")], topn)))
   
   topp <- rownames(tt)[1:topn]
   
@@ -422,100 +438,6 @@ for(i in 1:length(coefs)){
 
 
 ```
-
-
-# GO analysis
-
-```{r}
-
-library(topGO)
-library(Rgraphviz)
-
-
-affyLib <- "mogene20sttranscriptcluster.db"
-
-coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8")
-coef <- coefs[1]
-
-tt <- topTable(fit2, coef=coef, n=Inf)
-geneList <- rep(0, nrow(tt))
-names(geneList) <- rownames(tt)
-geneList[tt$adj.P.Val < 0.05 & abs(tt$logFC) > 1] <- 1
-table(geneList)
-
-### Function used to create new topGOdata object
-fun.gene.sel <- function(geneList) {
-  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
-}
-
-
-allRes.Fisher.merged <- NULL
-allRes.Fisher.elim.merged <- NULL
-
-
-for(go in c("BP","MF","CC")){
-  # go = "BP"
-  
-  sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", coef), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
-  
-  print(sampleGOdata)
-  
-  
-  # Fisher's exact test which is based on gene counts, and a Kolmogorov-Smirnov like test which computes enrichment based on gene scores
-  # For the method classic each GO category is tested independently
-  
-  resultFisher <- runTest(sampleGOdata, algorithm = "classic", statistic = "fisher")
-  resultFisher.elim <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
-  
-  
-  pValues.Fisher <- score(resultFisher)
-  topNodes.Fisher <- length(pValues.Fisher)
-  
-  pValues.Fisher.elim <- score(resultFisher.elim)
-  topNodes.Fisher.elim <- length(pValues.Fisher.elim)
-  
-  
-  allRes.Fisher <- GenTable(sampleGOdata, classicFisher = resultFisher, elimFisher = resultFisher.elim, orderBy = "classicFisher", ranksOf = "elimFisher", topNodes = topNodes.Fisher) 
-  
-  allRes.Fisher$GO <- go   
-  allRes.Fisher.merged <- rbind(allRes.Fisher.merged, allRes.Fisher)
-  
-  
-  allRes.Fisher.elim <- GenTable(sampleGOdata, classicFisher = resultFisher, elimFisher = resultFisher.elim, orderBy = "elimFisher", ranksOf = "classicFisher", topNodes = topNodes.Fisher.elim)      
-  
-  allRes.Fisher.elim$GO <- go 
-  allRes.Fisher.elim.merged <- rbind(allRes.Fisher.elim.merged, allRes.Fisher.elim)
-  
-#   showSigOfNodes(sampleGOdata, score(resultFisher), firstSigNodes = 5, useInfo = 'all')
-#   showSigOfNodes(sampleGOdata, score(resultFisher.elim), firstSigNodes = 5, useInfo = 'all')
-
-  
-}
-
-
-allRes.Fisher.merged$classicFisher.adj <- p.adjust(allRes.Fisher.merged$classicFisher, method = "BH")
-allRes.Fisher.merged <- allRes.Fisher.merged[order(allRes.Fisher.merged$classicFisher.adj, decreasing = FALSE), ]
-
-head(allRes.Fisher.merged, 20)
-
-
-write.table(allRes.Fisher.merged, paste("GO_Fisher_",coef,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-allRes.Fisher.elim.merged$elimFisher.adj <- p.adjust(allRes.Fisher.elim.merged$elimFisher, method = "BH")
-allRes.Fisher.elim.merged <- allRes.Fisher.elim.merged[order(allRes.Fisher.elim.merged$elimFisher.adj, decreasing = FALSE), ]
-
-head(allRes.Fisher.elim.merged, 20)
-
-write.table(allRes.Fisher.elim.merged, paste("GO_Fisher_elim_",coef,".xls", sep=""), sep="\t", row.names=F)
-
-
-
-```
-
-In GO analysis should I merge and adjust the p-values from different go or keep it separetely?
-Should I use classic Fisher or elim Fisher?
-
 
 # Gene set enrichment analysis with C7  Immunologic genes sets
 
@@ -548,7 +470,6 @@ eset.main <- eset.main[ ,ord]
 samples2keep <- grepl("leukemia|control_CD", targets$labels)
 
 treatments <- data.frame(Treatment = as.character(targets$groups[samples2keep]))
-treatments
 
 eset <- eset.main[, samples2keep] 
 
@@ -561,29 +482,37 @@ contrasts <- cbind(CtrlCD4 = c(-1, 0, 0, 1), CtrlCD4CD8 = c(0, -1, 0, 1), CtrlCD
 contrasts
 
 
+gsea <- list()
 
-gsea <- camera(y = eset, index=Index, design=design, contrast=contrasts[,"CtrlCD4"], trend.var=TRUE)
-
-head(gsea)
-
-table(gsea$FDR < 0.05)
-
-
-gsea <- camera(y = eset, index=Index, design=design, contrast=contrasts[,"CtrlCD4CD8"], trend.var=TRUE)
-
-head(gsea)
-
-table(gsea$FDR < 0.05)
+coef <- "CtrlCD4"
+gsea[[coef]] <- camera(y = eset, index=Index, design=design, contrast=contrasts[,coef], trend.var=FALSE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("NGenes","Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), NGenes = gsea[[coef]][,1], gsea[[coef]][,-1])
 
 
+coef <- "CtrlCD4CD8"
+gsea[[coef]] <- camera(y = eset, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
 
-gsea <- camera(y = eset, index=Index, design=design, contrast=contrasts[,"CtrlCD8"], trend.var=TRUE)
+coef <- "CtrlCD8"
+gsea[[coef]] <- camera(y = eset, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
 
-head(gsea)
-
-table(gsea$FDR < 0.05)
-
-
+### merge all results into one table
+gseaAll <- merge(gsea[["CtrlCD4"]], gsea[["CtrlCD4CD8"]], by = "GeneSet", all = TRUE)
+gseaAll <- merge(gseaAll, gsea[["CtrlCD8"]], by = "GeneSet", all = TRUE)
+write.table(gseaAll, paste("Comp1_GSEA_All.xls", sep=""), sep="\t", row.names=F, quote = FALSE)
 
 ```
 
@@ -591,7 +520,105 @@ table(gsea$FDR < 0.05)
 
 
 
+# GO analysis
+
+```{r}
+
+library(topGO)
+library(Rgraphviz)
+
+
+affyLib <- "mogene20sttranscriptcluster.db"
+
+### Function used to create new topGOdata object
+fun.gene.sel <- function(geneList) {
+  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
+}
+
+coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8")
+
+allResList <- list()
+
+for(coef in coefs){
+  # coef <- coefs[1]
+  
+  tt <- topTable(fit2, coef=coef, n=Inf)
+  geneList <- rep(0, nrow(tt))
+  names(geneList) <- rownames(tt)
+  geneList[tt$adj.P.Val < 0.05 & abs(tt$logFC) > 1] <- 1
+  table(geneList)
+    
+  for(go in c("BP","MF","CC")){
+    # go = "BP"
+    print(coef)
+    print(go)
+    sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", coef), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
+    
+    print(sampleGOdata)
+    
+    result <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
+    
+    pValues <- score(result)
+    topNodes <- length(pValues)
+    
+    allRes <- GenTable(sampleGOdata, elimFisher = result, orderBy = "elimFisher", topNodes = topNodes)      
+    colnames(allRes)[6] <- "PValues" 
+     
+    pdf(paste("PLOTS/GO_",coef, "_" ,go, ".pdf", sep=""))
+    showSigOfNodes(sampleGOdata, score(result), firstSigNodes = 5, useInfo = 'all')
+    dev.off()
+    
+    allRes$AdjPValues <- p.adjust(allRes$PValues, method = "BH")
+    
+    table(allRes$AdjPValues < 0.05)
+    
+    cat("#########################################################################################", fill = TRUE)
+    print(head(allRes, 20))
+    cat("#########################################################################################", fill = TRUE)
+    
+    allResList[[paste0(go, "_", coef)]] <- allRes
+    
+    
+  }
+  
+}
+
+
+#### save results 
+
+for(go in c("BP","MF","CC")){
+
+  coef <- "CtrlCD4"
+  allR <- allResList[[paste0(go, "_", coef)]]
+  colnames(allR) <- paste0(c(rep("", 3), rep(paste0(coef, "_"), 4)), colnames(allR))
+  allResList[[paste0(go, "_", coef)]] <- allR
+  
+  coef <- "CtrlCD4CD8"
+  allR <- allResList[[paste0(go, "_", coef)]][, -c(2, 3)]
+  colnames(allR) <- paste0(c("", rep(paste0(coef, "_"), 4)), colnames(allR))
+  allResList[[paste0(go, "_", coef)]] <- allR
+  
+  
+  coef <- "CtrlCD8"
+  allR <- allResList[[paste0(go, "_", coef)]][, -c(2, 3)]
+  colnames(allR) <- paste0(c("", rep(paste0(coef, "_"), 4)), colnames(allR))
+  allResList[[paste0(go, "_", coef)]] <- allR
+  
+
+  ### merge all results into one table
+  allAll <- merge(allResList[[paste0(go, "_", "CtrlCD4")]], allResList[[paste0(go, "_", "CtrlCD4CD8")]], by = "GO.ID", all = TRUE)  
+  allAll <- merge(allAll, allResList[[paste0(go, "_", "CtrlCD8")]], by = "GO.ID", all = TRUE)
+  write.table(allAll, paste0("Comp1_GO_Fisher_elim_", go ,".xls"), sep="\t", row.names=F, quote = FALSE)
+    
+}
+
+```
 
 
 
+
+
+```{r}
+sessionInfo()
+```
 
