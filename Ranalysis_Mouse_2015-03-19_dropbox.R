@@ -1314,7 +1314,6 @@ for(go in c("BP","MF","CC")){
 #### Comparison 2: pre VS after treatment
 ###########################################################################
 
-
 targets <- targets.org
 eset.main <- eset.main.org
 
@@ -1354,39 +1353,6 @@ dev.off()
 
 
 
-
-###########################################################################
-
-# gene sets from MSigDB with ENTREZ IDs / C6 - oncogenic signatures
-load("MSigDB_v4_0/mouse_c6_v4.rdata")
-
-# Mm.c6[1]
-mysets <- Mm.c6
-length(mysets)
-
-# table(sapply(mysets, length))
-
-
-### Create an Index for camera
-annot <- fData(eset.main)
-# table(annot$EntrezGeneID == "---")
-
-EntrezGeneID <- strsplit2(annot$EntrezGeneID, " /// ")
-
-nrow = nrow(EntrezGeneID)
-ncol = ncol(EntrezGeneID)
-
-Index <- lapply(mysets, function(ms){  
-  eg <- matrix(EntrezGeneID %in% ms, nrow = nrow, ncol = ncol, byrow = FALSE)
-  rowSums(eg) > 0 
-})
-
-
-
-###########################################################################
-
-
-
 #### design & analysis
 
 treatments <- data.frame(Treatment = as.character(targets$groups), CellType = as.character(targets$CellTypeShort))
@@ -1406,22 +1372,6 @@ fit2 <- eBayes(fit[, "TreatmentafterTreatment"], trend = TRUE)
 results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=1)
 summary(results)
 
-
-table <- topTable(fit2, coef=1, n=Inf)
-### in the report display only first gene symbol
-topn <- 10
-GeneSymbol <- strsplit2(head(table[,"GeneSymbol"], topn), " /// ")[,1]
-GeneTitle <- paste0(substr(strsplit2(head(table[,"GeneTitle"], topn), " /// ")[,1], 1, 30))  
-print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(table[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
-
-hist(table$P.Value, breaks = 100, xlab = "P-values")  
-
-
-
-#### CAMERA
-gsea <- camera(y = eset.main, index=Index, design=design, contrast=ncol(design), trend.var=TRUE)
-head(gsea, 10)
-table(gsea$FDR < 0.05)
 
 
 
@@ -1446,22 +1396,7 @@ results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05
 summary(results)
 
 
-table <- topTable(fit2, coef=1, n=Inf)
-### in the report display only first gene symbol
-topn <- 10
-GeneSymbol <- strsplit2(head(table[,"GeneSymbol"], topn), " /// ")[,1]
-GeneTitle <- paste0(substr(strsplit2(head(table[,"GeneTitle"], topn), " /// ")[,1], 1, 30))  
-print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(table[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
 
-hist(table$P.Value, breaks = 100, xlab = "P-values")  
-
-
-
-
-#### CAMERA
-gsea <- camera(y = eset.main, index=Index, design=design, contrast=ncol(design), trend.var=TRUE)
-head(gsea, 10)
-table(gsea$FDR < 0.05)
 
 
 
@@ -1504,35 +1439,6 @@ eset.main <- eset.main[keepEXPR, ]
 eset.main
 
 
-###########################################################################
-
-# gene sets from MSigDB with ENTREZ IDs / C6 - oncogenic signatures
-load("MSigDB_v4_0/mouse_c6_v4.rdata")
-
-# Mm.c6[1]
-mysets <- Mm.c6
-length(mysets)
-
-# table(sapply(mysets, length))
-
-
-### Create an Index for camera
-annot <- fData(eset.main)
-# table(annot$EntrezGeneID == "---")
-
-EntrezGeneID <- strsplit2(annot$EntrezGeneID, " /// ")
-
-nrow = nrow(EntrezGeneID)
-ncol = ncol(EntrezGeneID)
-
-Index <- lapply(mysets, function(ms){  
-  eg <- matrix(EntrezGeneID %in% ms, nrow = nrow, ncol = ncol, byrow = FALSE)
-  rowSums(eg) > 0 
-})
-
-
-
-###########################################################################
 
 
 #### design & analysis
@@ -1553,25 +1459,6 @@ fit2 <- eBayes(fit[, "TreatmentafterTreatment"], trend = TRUE)
 ## with the FC cutoff
 results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=1)
 summary(results)
-
-
-
-table <- topTable(fit2, coef=1, n=Inf)
-### in the report display only first gene symbol
-topn <- 10
-GeneSymbol <- strsplit2(head(table[,"GeneSymbol"], topn), " /// ")[,1]
-GeneTitle <- paste0(substr(strsplit2(head(table[,"GeneTitle"], topn), " /// ")[,1], 1, 30))  
-print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(table[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
-
-hist(table$P.Value, breaks = 100, xlab = "P-values")  
-
-
-
-
-#### CAMERA
-gsea <- camera(y = eset.main, index=Index, design=design, contrast=ncol(design), trend.var=TRUE)
-head(gsea, 10)
-table(gsea$FDR < 0.05)
 
 
 
@@ -1596,26 +1483,6 @@ fit2 <- eBayes(fit[, "TreatmentafterTreatment"], trend = TRUE)
 results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=1)
 summary(results)
 
-
-
-
-table <- topTable(fit2, coef=1, n=Inf)
-### in the report display only first gene symbol
-topn <- 10
-GeneSymbol <- strsplit2(head(table[,"GeneSymbol"], topn), " /// ")[,1]
-GeneTitle <- paste0(substr(strsplit2(head(table[,"GeneTitle"], topn), " /// ")[,1], 1, 30))  
-print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(table[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
-
-hist(table$P.Value, breaks = 100, xlab = "P-values")  
-
-
-
-
-
-#### CAMERA
-gsea <- camera(y = eset.main, index=Index, design=design, contrast=ncol(design), trend.var=TRUE)
-head(gsea, 10)
-table(gsea$FDR < 0.05)
 
 
 
