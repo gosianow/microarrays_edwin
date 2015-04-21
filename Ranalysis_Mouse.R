@@ -17,6 +17,8 @@
 # 18 Mar 2015
 # - use bone marrow control
 # - add pre VS after treatment analysis
+# 17 Apr 2015
+# - add barcodeplots in the gene set analysis 
 
 ###########################################################################
 
@@ -939,8 +941,12 @@ dev.off()
 ### save all results with better order
 coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8", "CtrlBM")
 
-resExpr <- round(exprs(eset.main), 2)
-colnames(resExpr) <- paste0(treatments$Treatment, "_", colnames(resExpr))
+# resExpr <- round(exprs(eset.main), 2)
+# colnames(resExpr) <- paste0(treatments$Treatment, "_", colnames(resExpr))
+
+resExpr <- round(exprs(eset.main.org[keepEXPR, ]), 2)
+colnames(resExpr) <- paste0(targets.org$groups, "_", colnames(resExpr))
+
 resCoeff <- fit2$coefficients
 colnames(resCoeff) <- paste0(colnames(resCoeff), "_coeffs")
 resT <- fit2$t
@@ -959,7 +965,7 @@ colOrder <- paste(rep(coefs, each = length(stats)), rep(stats, length(coefs)), s
 
 resDE <- data.frame(resCoeff, resT, resPValue, resPValueAdj, resRes)[, colOrder]
 
-resAll <- cbind(resGenes, resDE, resExpr )
+resAll <- cbind(resGenes, resDE, resExpr[, order(colnames(resExpr))] )
 
 write.table(resAll, file = "Comp1_DE_results_All.xls", quote = FALSE, sep = "\t", row.names = FALSE)
 
@@ -1083,6 +1089,163 @@ for(i in 1:length(coefs)){
 
 
 ###########################################################################
+#### Gene set enrichment analysis with C5 - GO genes sets
+###########################################################################
+
+# gene sets from MSigDB with ENTREZ IDs
+load("MSigDB_v4_0/mouse_c5_v4.rdata")
+
+mysets <- Mm.c5
+length(mysets)
+
+### keep the sets of interest
+intrset <- read.table("Gene_Sets/Interesting_gene_sets_C5.txt", header = FALSE, sep = ",")[, 1]
+intrset
+
+intrset <- gsub("-", " ", intrset)
+intrset <- gsub(" ", "_", intrset)
+
+intrset <- toupper(intrset)
+length(intrset)
+
+sum(names(mysets) %in% intrset)
+
+mysets <- mysets[intrset]
+
+
+# table(sapply(mysets, length))
+
+
+### Create an Index for camera
+annot <- fData(eset.main)
+# table(annot$EntrezGeneID == "---")
+
+### Too slow
+# EntrezGeneID <- strsplit(annot$EntrezGeneID, " /// ")
+# Index <- lapply(mysets, function(ms){sapply(EntrezGeneID, function(eg){any(eg %in% ms)})})
+
+
+EntrezGeneID <- strsplit2(annot$EntrezGeneID, " /// ")
+
+nrow = nrow(EntrezGeneID)
+ncol = ncol(EntrezGeneID)
+
+Index <- lapply(mysets, function(ms){  
+  eg <- matrix(EntrezGeneID %in% ms, nrow = nrow, ncol = ncol, byrow = FALSE)
+  rowSums(eg) > 0 
+})
+
+
+IndexMx <- do.call(cbind, Index)
+class(IndexMx) <- "numeric"
+colnames(IndexMx) <- names(mysets)
+IndexMx <- data.frame(ProbesetID = annot$ProbesetID, IndexMx)
+
+resAll <- merge(resAll, IndexMx, by = "ProbesetID", sort = FALSE)
+
+write.table(resAll, file = "Comp1_DE_results_AllPlus.xls", quote = FALSE, sep = "\t", row.names = FALSE)
+
+
+#### design & analysis
+
+treatments <- data.frame(Treatment = as.character(targets$groups))
+
+design <- model.matrix(~ 0 + Treatment, data=treatments)
+rownames(design) <- targets$labels
+design
+
+contrasts <- cbind(CtrlCD4 = c(-1, 0, 0, 0, 1), CtrlCD4CD8 = c(0, -1, 0, 0, 1), CtrlCD8 = c(0, 0, -1, 0, 1), CtrlBM = c(0, 0, 0, -1, 1)) # treatment - control
+contrasts
+
+
+
+
+### run CAMERA
+
+gsea <- list()
+
+coef <- "CtrlCD4"
+gsea.tmp <- gsea[[coef]] <- camera(y = eset.main, index=Index, design=design, contrast=contrasts[,coef], trend.var=FALSE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("NGenes","Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), NGenes = gsea[[coef]][,1], gsea[[coef]][,-1])
+# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+
+### using information from eBayes fitting: fit2
+
+pdf(paste0("PLOTS/GS_barcodeplot_",coef,".pdf"))
+
+topgs <- 1
+gsn <-rownames(gsea[[coef]])[1:topgs] 
+gss <- gsea.tmp[gsn, , drop = FALSE]
+
+for(i in 1:length(topgs)){
+  
+  barcodeplot(statistics = as.numeric((fit2$t[,coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Up","Down"), quantiles = c(-1,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
+  
+  barcodeplot(statistics = as.numeric((fit2$p.value[, coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Not significant","Significant"), quantiles = c(0.05,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
+  
+  
+}
+
+dev.off()
+
+
+
+
+coef <- "CtrlCD4CD8"
+gsea[[coef]] <- camera(y = eset.main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
+# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+coef <- "CtrlCD8"
+gsea[[coef]] <- camera(y = eset.main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
+# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+
+coef <- "CtrlBM"
+gsea[[coef]] <- camera(y = eset.main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
+# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+
+
+
+### merge all results into one table
+gseaAll <- merge(gsea[["CtrlCD4"]], gsea[["CtrlCD4CD8"]], by = "GeneSet", all = TRUE)
+gseaAll <- merge(gseaAll, gsea[["CtrlCD8"]], by = "GeneSet", all = TRUE)
+gseaAll <- merge(gseaAll, gsea[["CtrlBM"]], by = "GeneSet", all = TRUE)
+write.table(gseaAll, paste("Comp1_GSEA_C5_All.xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+
+
+
+# http://www.broadinstitute.org/gsea/doc/GSEAUserGuideTEXT.htm
+
+
+
+###########################################################################
 #### Gene set enrichment analysis with C7  Immunologic genes sets
 ###########################################################################
 
@@ -1148,13 +1311,36 @@ contrasts
 gsea <- list()
 
 coef <- "CtrlCD4"
-gsea[[coef]] <- camera(y = eset.main, index=Index, design=design, contrast=contrasts[,coef], trend.var=FALSE)
+gsea.tmp <- gsea[[coef]] <- camera(y = eset.main, index=Index, design=design, contrast=contrasts[,coef], trend.var=FALSE)
 head(gsea[[coef]], 10)
 table(gsea[[coef]]$FDR < 0.05)
 gsea[[coef]] <- gsea[[coef]][, c("NGenes","Direction", "PValue", "FDR")]
 colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
 gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), NGenes = gsea[[coef]][,1], gsea[[coef]][,-1])
 # write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+
+### using information from eBayes fitting: fit2
+
+pdf(paste0("PLOTS/GS_barcodeplot_",coef,".pdf"))
+
+topgs <- 1
+gsn <-rownames(gsea[[coef]])[1:topgs] 
+gss <- gsea.tmp[gsn, , drop = FALSE]
+
+for(i in 1:length(topgs)){
+  
+  barcodeplot(statistics = as.numeric((fit2$t[,coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Up","Down"), quantiles = c(-1,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
+  
+  barcodeplot(statistics = as.numeric((fit2$p.value[, coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Not significant","Significant"), quantiles = c(0.05,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
+  
+  
+}
+
+dev.off()
+
+
 
 
 coef <- "CtrlCD4CD8"
@@ -1189,11 +1375,229 @@ gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
 
 
 
+
+
 ### merge all results into one table
 gseaAll <- merge(gsea[["CtrlCD4"]], gsea[["CtrlCD4CD8"]], by = "GeneSet", all = TRUE)
 gseaAll <- merge(gseaAll, gsea[["CtrlCD8"]], by = "GeneSet", all = TRUE)
 gseaAll <- merge(gseaAll, gsea[["CtrlBM"]], by = "GeneSet", all = TRUE)
-write.table(gseaAll, paste("Comp1_GSEA_All.xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+write.table(gseaAll, paste("Comp1_GSEA_C7_All.xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+
+
+
+# http://www.broadinstitute.org/gsea/doc/GSEAUserGuideTEXT.htm
+
+
+
+
+###########################################################################
+#### Gene set enrichment analysis with Hallmark genes sets
+###########################################################################
+
+############### Create mouse_hallmark_v5.rdata object like on WEHI web
+
+allLines <- readLines("MSigDB_v4_0/h.all.v5.0.entrez.gmt", n = -1)
+
+humanSets <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+
+namesHS <- humanSets[, 1]
+
+Hu.hallmark <- apply(humanSets, 1, function(r){ 
+  r <- r[-c(1,2)]
+  r <- r[r != ""]
+  return(as.numeric(r))
+  } )
+
+
+names(Hu.hallmark) <- namesHS
+
+### get the mouse human homology
+hom <- read.table("MSigDB_v4_0/HOM_MouseHumanSequence.txt", header = TRUE, sep = "\t")
+
+homM <- hom[hom$Common.Organism.Name == "mouse, laboratory", c("HomoloGene.ID", "EntrezGene.ID")]
+
+homH <- hom[hom$Common.Organism.Name == "human", c("HomoloGene.ID", "EntrezGene.ID")]
+
+homMatch <- merge(homH, homM, by = "HomoloGene.ID", sort = FALSE, all = TRUE) 
+
+homMatch <- homMatch[!is.na(homMatch[, 2]) & !is.na(homMatch[, 3]), ]
+
+# merge(data.frame(a = c(1, 1, 2), b = c(21, 23, 24)), data.frame(a = c(1, 1, 2, 2), b = c(31, 32, 33, 34)) , by=1, sort = FALSE, all = TRUE)
+
+
+Mm.hallmark <- lapply(Hu.hallmark, function(gs){
+  
+  unique(homMatch[homMatch[, 2] %in% gs, 3])
+  
+})
+
+
+save(Mm.hallmark, file = "MSigDB_v4_0/mouse_hallmark_v5.rdata")
+
+
+############### Create mouse_hallmark_v5.rdata object like on WEHI web
+
+
+# gene sets from MSigDB with ENTREZ IDs
+load("MSigDB_v4_0/mouse_hallmark_v5.rdata")
+
+mysets <- Mm.hallmark
+length(mysets)
+
+### keep the sets of interest
+intrset <- read.table("Gene_Sets/Interesting_gene_sets_Hallmark.txt", header = FALSE, sep = ",", as.is = TRUE)[, 1]
+intrset
+
+intrset <- gsub("-", " ", intrset)
+intrset <- gsub(" ", "_", intrset)
+
+intrset <- paste0("HALLMARK_",toupper(intrset))
+length(intrset)
+
+sum(names(mysets) %in% intrset)
+
+# intrset[!intrset %in% names(mysets)]
+
+
+mysets <- mysets[intrset]
+
+
+# table(sapply(mysets, length))
+
+
+### Create an Index for camera
+annot <- fData(eset.main)
+# table(annot$EntrezGeneID == "---")
+
+### Too slow
+# EntrezGeneID <- strsplit(annot$EntrezGeneID, " /// ")
+# Index <- lapply(mysets, function(ms){sapply(EntrezGeneID, function(eg){any(eg %in% ms)})})
+
+
+EntrezGeneID <- strsplit2(annot$EntrezGeneID, " /// ")
+
+nrow = nrow(EntrezGeneID)
+ncol = ncol(EntrezGeneID)
+
+Index <- lapply(mysets, function(ms){  
+  eg <- matrix(EntrezGeneID %in% ms, nrow = nrow, ncol = ncol, byrow = FALSE)
+  rowSums(eg) > 0 
+})
+
+
+IndexMx <- do.call(cbind, Index)
+class(IndexMx) <- "numeric"
+colnames(IndexMx) <- names(mysets)
+IndexMx <- data.frame(ProbesetID = annot$ProbesetID, IndexMx)
+
+resAll <- merge(resAll, IndexMx, by = "ProbesetID", sort = FALSE)
+
+write.table(resAll, file = "Comp1_DE_results_AllPlus.xls", quote = FALSE, sep = "\t", row.names = FALSE)
+
+
+#### design & analysis
+
+treatments <- data.frame(Treatment = as.character(targets$groups))
+
+design <- model.matrix(~ 0 + Treatment, data=treatments)
+rownames(design) <- targets$labels
+design
+
+contrasts <- cbind(CtrlCD4 = c(-1, 0, 0, 0, 1), CtrlCD4CD8 = c(0, -1, 0, 0, 1), CtrlCD8 = c(0, 0, -1, 0, 1), CtrlBM = c(0, 0, 0, -1, 1)) # treatment - control
+contrasts
+
+
+
+
+### run CAMERA
+
+gsea <- list()
+
+coef <- "CtrlCD4"
+gsea.tmp <- gsea[[coef]] <- camera(y = eset.main, index=Index, design=design, contrast=contrasts[,coef], trend.var=FALSE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("NGenes","Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), NGenes = gsea[[coef]][,1], gsea[[coef]][,-1])
+# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+
+### using information from eBayes fitting: fit2
+
+pdf(paste0("PLOTS/GS_barcodeplot_",coef,".pdf"))
+
+topgs <- 1
+gsn <-rownames(gsea[[coef]])[1:topgs] 
+gss <- gsea.tmp[gsn, , drop = FALSE]
+
+for(i in 1:length(topgs)){
+  
+  barcodeplot(statistics = as.numeric((fit2$t[,coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Up","Down"), quantiles = c(-1,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
+  
+  barcodeplot(statistics = as.numeric((fit2$p.value[, coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Not significant","Significant"), quantiles = c(0.05,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
+  
+  
+}
+
+dev.off()
+
+
+
+
+coef <- "CtrlCD4CD8"
+gsea[[coef]] <- camera(y = eset.main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
+# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+coef <- "CtrlCD8"
+gsea[[coef]] <- camera(y = eset.main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
+# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+
+coef <- "CtrlBM"
+gsea[[coef]] <- camera(y = eset.main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
+head(gsea[[coef]], 10)
+table(gsea[[coef]]$FDR < 0.05)
+gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
+colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
+gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
+# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+
+
+
+### merge all results into one table
+gseaAll <- merge(gsea[["CtrlCD4"]], gsea[["CtrlCD4CD8"]], by = "GeneSet", all = TRUE)
+gseaAll <- merge(gseaAll, gsea[["CtrlCD8"]], by = "GeneSet", all = TRUE)
+gseaAll <- merge(gseaAll, gsea[["CtrlBM"]], by = "GeneSet", all = TRUE)
+write.table(gseaAll, paste("Comp1_GSEA_Hallmark_All.xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+
+
+
+
+
+# http://www.broadinstitute.org/gsea/doc/GSEAUserGuideTEXT.htm
+
+
+
 
 
 
@@ -1307,6 +1711,23 @@ for(go in c("BP","MF","CC")){
 
 
 
+### using information from eBayes fitting: fit2
+
+pdf(paste0("PLOTS/GO_barcodeplot_",coef,".pdf"))
+
+topgs <- 1
+gsn <-rownames(gsea[[coef]])[1:topgs] 
+gss <- gsea.tmp[gsn, , drop = FALSE]
+
+for(i in 1:length(topgs)){
+  
+  barcodeplot(statistics = as.numeric((fit2$p.value[, coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Not significant","Significant"), quantiles = c(0.05,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
+  
+  
+}
+
+dev.off()
+
 
 
 
@@ -1414,7 +1835,56 @@ GeneSymbol <- strsplit2(head(table[,"GeneSymbol"], topn), " /// ")[,1]
 GeneTitle <- paste0(substr(strsplit2(head(table[,"GeneTitle"], topn), " /// ")[,1], 1, 30))  
 print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(table[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
 
+pdf("PLOTS/hist_pvs.pdf")
 hist(table$P.Value, breaks = 100, xlab = "P-values")  
+dev.off()
+
+
+### plot expression of top sign. genes/probesets
+library(ggplot2)
+library(reshape2)
+
+topn <- 20
+expr <- exprs(eset.main)
+xs <- 1:ncol(expr)
+
+
+  coef <- 1
+
+  tt <- topTable(fit2, coef=coef, n=topn)
+  # write.table(tt, paste0("Comp1_topTable_",coef,".xls"), quote = FALSE, sep = "\t", row.names = FALSE)
+  
+  ### in the report display only first gene symbol
+  GeneSymbol <- strsplit2(head(tt[,"GeneSymbol"], topn), " /// ")[,1]
+  GeneTitle <- paste0(substr(strsplit2(head(tt[,"GeneTitle"], topn), " /// ")[,1], 1, 30))
+  
+  print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(tt[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
+  
+  topp <- rownames(tt)[1:topn]
+  
+  df <- data.frame(Gene = topp, expr[topp,])
+  df.m <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
+  ### keep order of genes as in tt
+  df.m$Gene <- factor(df.m$Gene, levels = topp)
+  ### add Entrez ID to the facet labels
+  lab.fct <- paste0(topp, "\n", strsplit2(tt[topp, "GeneSymbol"], " /// ")[,1])
+  levels(df.m$Gene) <- lab.fct
+  
+  ggp <- ggplot(df.m, aes(x = Sample, y = Expression)) +  
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 80, hjust = 1, size = 10), plot.title = element_text(size = 16), strip.text.x = element_text(size = 10)) +
+    scale_x_discrete(labels=targets$groups) +
+    labs(title = coef, y = "Log2 expression") +
+    geom_bar(stat = "identity", colour = targets$colors, fill = targets$colors) +
+    facet_wrap(~ Gene, scales="free_y", ncol=4) 
+  
+  pdf(paste0("PLOTS/topExpressionBarPlot_",coef,".pdf"), 11, 11)
+  print(ggp)    
+  dev.off()
+  
+
+
+
 
 
 
@@ -1422,6 +1892,7 @@ hist(table$P.Value, breaks = 100, xlab = "P-values")
 gsea <- camera(y = eset.main, index=Index, design=design, contrast=ncol(design), trend.var=TRUE)
 head(gsea, 10)
 table(gsea$FDR < 0.05)
+
 
 
 
@@ -1453,7 +1924,9 @@ GeneSymbol <- strsplit2(head(table[,"GeneSymbol"], topn), " /// ")[,1]
 GeneTitle <- paste0(substr(strsplit2(head(table[,"GeneTitle"], topn), " /// ")[,1], 1, 30))  
 print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(table[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
 
+pdf("PLOTS/hist_pvs.pdf")
 hist(table$P.Value, breaks = 100, xlab = "P-values")  
+dev.off()
 
 
 
@@ -1563,7 +2036,9 @@ GeneSymbol <- strsplit2(head(table[,"GeneSymbol"], topn), " /// ")[,1]
 GeneTitle <- paste0(substr(strsplit2(head(table[,"GeneTitle"], topn), " /// ")[,1], 1, 30))  
 print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(table[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
 
+pdf("PLOTS/hist_pvs.pdf")
 hist(table$P.Value, breaks = 100, xlab = "P-values")  
+dev.off()
 
 
 
@@ -1606,7 +2081,9 @@ GeneSymbol <- strsplit2(head(table[,"GeneSymbol"], topn), " /// ")[,1]
 GeneTitle <- paste0(substr(strsplit2(head(table[,"GeneTitle"], topn), " /// ")[,1], 1, 30))  
 print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(table[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
 
+pdf("PLOTS/hist_pvs.pdf")
 hist(table$P.Value, breaks = 100, xlab = "P-values")  
+dev.off()
 
 
 
@@ -1731,19 +2208,6 @@ for(i in 1:length(coefs)){
   print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(tt[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
   
   topp <- rownames(tt)[1:topn]
-  
-  #   pdf(paste0("PLOTS/topExpression_",coef,".pdf"))
-  #   par(mfrow=c(2,2))
-  #   
-  #   for(i in 1:topn){
-  #     
-  #     plot(xs,expr[topp[i], ], xaxt = "n", ylab = "log2 Expression", xlab = "", pch = 16, cex = 2, col = targets$colors, main = paste0(topp[i]), las = 2)
-  #     axis(side=1, at=xs, labels=NULL, las=2)
-  #      
-  #   }
-  #   
-  #   dev.off()
-  
   
   df <- data.frame(Gene = topp, expr[topp,])
   df.m <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")

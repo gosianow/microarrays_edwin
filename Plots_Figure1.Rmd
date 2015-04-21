@@ -1,0 +1,152 @@
+---
+title: "Figure 1"
+author: "Gosia Nowicka"
+date: "20 Apr 2015"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, echo = FALSE}
+opts_knit$set(root.dir = "/home/Shared/data/array/Microarray_Edwin")
+opts_chunk$set(message=FALSE, warning = FALSE, cache = TRUE, size="small", tidy=TRUE, tidy.opts=list(blank=FALSE, width.cutoff=70), dev = "pdf", cache.path = '/home/Shared/data/array/Microarray_Edwin/Plots_Figure1_cache/', fig.path = '/home/Shared/data/array/Microarray_Edwin/Plots_Figure1_figure/', fig.width = 7, fig.height = 7)
+options(width=100)
+```
+
+
+# Load data
+
+Load targets table with information about samples.
+
+```{r}
+targets <- read.table(file.path("metadata", "targets.xls"), header = TRUE, sep = "\t", comment.char = "", as.is = TRUE)
+
+targets
+
+```
+
+Load Affy CEL data using `oligo` package. Plot the distributions of raw probe expression in all samples.
+
+```{r}
+library(oligo)
+library(pd.mogene.2.0.st)
+
+ff <- as.character(targets$FileName)
+
+x <- oligo::read.celfiles(filenames = ff)
+
+```
+
+
+# Normalize data with RMA method
+
+```{r}
+eset <- oligo::rma(x) 
+
+####### Keep only the control and leukemia samples
+
+keepSAMPS <- targets$ExperimentShort != "afterTreatment" & targets$labels != "control_HeLa"
+
+eset <- eset[, keepSAMPS]
+targets <- targets[keepSAMPS, ]
+
+
+
+```
+
+
+# MDS plot
+
+
+```{r MDS}
+library(limma)
+labels <- paste0(ifelse(is.na(targets$ctrlRep), "", paste0(targets$ctrlRep, " ")), targets$labels)
+
+
+mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2, xlim = c(-3, 2))
+
+```
+
+
+# Heatmaps
+
+
+```{r Heatmaps, fig.width = 7, fig.height = 10}
+
+library(pheatmap)
+
+### sort samples by groups
+ord <- order(targets$groups)
+targets <- targets[ord, ]
+eset <- eset[ ,ord]
+
+expr <- data.frame(exprs(eset))
+
+### load list of genes of interest
+
+intrGenes <- read.table("Gene_Sets/niche_interaction_genes_niche_binding.csv", header = TRUE, sep = ",")
+intrProbes <- as.character(intrGenes$ProbesetID)
+
+dataHeat <- expr[intrProbes, ]
+
+annotation_col <- targets[, "groups", drop = FALSE]
+rownames(annotation_col) <- colnames(dataHeat)
+
+cols <- unique(targets$colors)
+names(cols) <- unique(targets$group)
+  
+annotation_colors = list(groups = cols)
+
+labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
+
+
+### Plot of expression scaled per gene 
+pheatmap(dataHeat, cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 8, scale = "row", gaps_col = c(3, 6, 9, 12), breaks =  seq(from = -4, to = 4, length.out = 101), legend_breaks = seq(from = -4, to = 4, by = 2))
+
+
+### load list of genes of interest
+
+intrGenes <- read.table("Gene_Sets/niche_interaction_genes_niche_formation.csv", header = TRUE, sep = ",")
+intrProbes <- as.character(intrGenes$ProbesetID)
+
+dataHeat <- expr[intrProbes, ]
+
+annotation_col <- targets[, "groups", drop = FALSE]
+rownames(annotation_col) <- colnames(dataHeat)
+
+cols <- unique(targets$colors)
+names(cols) <- unique(targets$group)
+
+annotation_colors = list(groups = cols)
+
+labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
+
+### Plot of expression scaled per gene
+pheatmap(dataHeat, cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 8, scale = "row", gaps_col = c(3, 6, 9, 12), breaks =  seq(from = -4, to = 4, length.out = 101), legend_breaks = seq(from = -4, to = 4, by = 2))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
