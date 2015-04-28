@@ -12,9 +12,9 @@ setwd("/home/Shared/data/array/Microarray_Edwin")
 ### data 
 ###########################################################################
 
-targets <- read.table(file.path("metadata", "targets.xls"), header = TRUE, sep = "\t", comment.char = "", as.is = TRUE)
+targets.org <- read.table(file.path("metadata", "targets.xls"), header = TRUE, sep = "\t", comment.char = "", as.is = TRUE)
 
-targets
+targets.org
 
 library(oligo)
 library(pd.mogene.2.0.st)
@@ -26,14 +26,14 @@ x <- oligo::read.celfiles(filenames = ff)
 
 # Normalize data with RMA method
 
-eset <- oligo::rma(x) 
+eset.org <- oligo::rma(x) 
 
 ####### Keep only the control and leukemia samples
 
-keepSAMPS <- targets$ExperimentShort != "afterTreatment" & targets$labels != "control_HeLa"
+keepSAMPS <- targets.org$ExperimentShort != "afterTreatment" & targets.org$labels != "control_HeLa"
 
-eset <- eset[, keepSAMPS]
-targets <- targets[keepSAMPS, ]
+eset <- eset.org[, keepSAMPS]
+targets <- targets.org[keepSAMPS, ]
 
 
 ###########################################################################
