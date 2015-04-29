@@ -1061,14 +1061,9 @@ eset.main <- eset.main[keepEXPR, ]
 eset.main
 
 
-
-
 ### plot MDS
-pdf("PLOTS/MDS_norm_Comp2.pdf")
+
 mds <- plotMDS(eset.main, top=500, col = targets$colors, labels = targets$labels, cex = 1.2, xlim = c(-2, 3), ylim = c(-2, 3))
-dev.off()
-
-
 
 
 ###########################################################################

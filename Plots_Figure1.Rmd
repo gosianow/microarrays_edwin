@@ -1,7 +1,7 @@
 ---
 title: "Figure 1"
 author: "Gosia Nowicka"
-date: "28 Apr 2015"
+date: "29 Apr 2015"
 output: 
   html_document:
     toc: true
@@ -9,7 +9,7 @@ output:
 
 ```{r setup, echo = FALSE}
 opts_knit$set(root.dir = "/home/Shared/data/array/Microarray_Edwin")
-opts_chunk$set(message=FALSE, warning = FALSE, cache = TRUE, size="small", tidy=TRUE, tidy.opts=list(blank=FALSE, width.cutoff=70), dev = "pdf", cache.path = '/home/Shared/data/array/Microarray_Edwin/Plots_Figure1_cache/', fig.path = '/home/Shared/data/array/Microarray_Edwin/Plots_Figure1_figure/', fig.width = 7, fig.height = 7)
+opts_chunk$set(message=FALSE, warning = FALSE, cache = TRUE, size="small", tidy=TRUE, tidy.opts=list(blank=FALSE, width.cutoff=70), dev = "pdf", cache.path = '/home/Shared/data/array/Microarray_Edwin/Plots_Figure1_cache/', fig.path = '/home/Shared/data/array/Microarray_Edwin/Plots_Figure1_figure/', fig.width = 5, fig.height = 5)
 options(width=100)
 ```
 
@@ -45,7 +45,33 @@ eset.org <- oligo::rma(x)
 
 ```
 
+
+
 # Leukemia vs. control 
+
+
+```{r Samps_controlAll}
+####### Keep all controls and leukemia samples
+keepSAMPS <- targets.org$ExperimentShort != "afterTreatment" & targets.org$labels != "control_HeLa"
+
+eset <- eset.org[, keepSAMPS]
+targets <- targets.org[keepSAMPS, ]
+
+```
+
+
+## MDS plot
+
+
+```{r MDS_controls_All}
+library(limma)
+labels <- paste0(ifelse(is.na(targets$ctrlRep), "", paste0(targets$ctrlRep, " ")), targets$labels)
+
+mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1, xlim = c(-2, 3), ylim = c(-2, 3), las = 1, cex.axis = 1, cex.lab = 1)
+
+```
+
+
 
 ```{r Samps_control}
 ####### Keep only the CD4, CD8 and CD4CD8 controls and leukemia samples
@@ -64,8 +90,7 @@ targets <- targets.org[keepSAMPS, ]
 library(limma)
 labels <- paste0(ifelse(is.na(targets$ctrlRep), "", paste0(targets$ctrlRep, " ")), targets$labels)
 
-
-mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2, xlim = c(-2, 3))
+mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1, xlim = c(-2, 3), ylim = c(-2, 3), las = 1, cex.axis = 1, cex.lab = 1)
 
 ```
 
@@ -73,7 +98,7 @@ mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2,
 ## Heatmaps
 
 
-```{r Heatmaps_controls, fig.width = 7, fig.height = 10}
+```{r Heatmaps_controls_niche_binding, fig.width = 5, fig.height = 5}
 
 library(pheatmap)
 
@@ -85,12 +110,10 @@ eset <- eset[ ,ord]
 expr <- data.frame(exprs(eset))
 ### normalize expression per gene
 exprNorm <- t(scale(t(expr), center = TRUE, scale = TRUE))
-exprNorm2 <- t(scale(t(expr), center = TRUE, scale = FALSE))
-
 
 ### load list of genes of interest
 
-intrGenes <- read.table("Gene_Sets/niche_interaction_genes_v2_niche_binding.csv", header = TRUE, sep = ",")
+intrGenes <- read.table("Gene_Sets/niche_interaction_genes_v3_niche_binding.csv", header = TRUE, sep = ",")
 intrProbes <- as.character(intrGenes$ProbesetID)
 
 dataHeat <- exprNorm[intrProbes, ]
@@ -107,33 +130,18 @@ labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
 
 
 ### Plot of expression scaled per gene 
-pheatmap(dataHeat, cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 3, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), main = "Niche binding", clustering_method = "single")
+pheatmap(dataHeat, color = colorRamps::matlab.like(100), cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 6, fontsize_col = 6, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 3, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), fontsize = 6)
+
+```
 
 
 
-dataHeat <- exprNorm2[intrProbes, ]
-
-annotation_col <- targets[, "groups", drop = FALSE]
-rownames(annotation_col) <- colnames(dataHeat)
-
-cols <- unique(targets$colors)
-names(cols) <- unique(targets$group)
-  
-annotation_colors = list(groups = cols)
-
-labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
-
-
-### Plot of expression scaled per gene 
-pheatmap(dataHeat, cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 4, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), main = "Niche binding", clustering_method = "single")
-
-
-
+```{r Heatmaps_controls_niche_formation, fig.width = 5, fig.height = 5}
 
 
 ### load list of genes of interest
 
-intrGenes <- read.table("Gene_Sets/niche_interaction_genes_v2_niche_formation.csv", header = TRUE, sep = ",")
+intrGenes <- read.table("Gene_Sets/niche_interaction_genes_v3_niche_formation.csv", header = TRUE, sep = ",")
 intrProbes <- as.character(intrGenes$ProbesetID)
 
 dataHeat <- exprNorm[intrProbes, ]
@@ -149,24 +157,7 @@ annotation_colors = list(groups = cols)
 labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
 
 ### Plot of expression scaled per gene
-pheatmap(dataHeat, cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 3, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), main = "Niche formation", clustering_method = "single")
-
-
-
-dataHeat <- exprNorm2[intrProbes, ]
-
-annotation_col <- targets[, "groups", drop = FALSE]
-rownames(annotation_col) <- colnames(dataHeat)
-
-cols <- unique(targets$colors)
-names(cols) <- unique(targets$group)
-
-annotation_colors = list(groups = cols)
-
-labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
-
-### Plot of expression scaled per gene
-pheatmap(dataHeat, cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 4, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), main = "Niche formation", clustering_method = "single")
+pheatmap(dataHeat, color = colorRamps::matlab.like(100), cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 6, fontsize_col = 6, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 3, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), fontsize = 6)
 
 ```
 
@@ -194,7 +185,7 @@ targets <- targets.org[keepSAMPS, ]
 library(limma)
 labels <- targets$labels
 
-mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2, xlim = c(-2, 3))
+mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1, xlim = c(-2, 3), ylim = c(-2, 3), las = 1, cex.axis = 1, cex.lab = 1)
 
 ```
 
@@ -202,7 +193,7 @@ mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2,
 ## Heatmaps
 
 
-```{r Heatmaps_afterTreatment, fig.width = 7, fig.height = 10}
+```{r Heatmaps_afterTreatment, fig.width = 5, fig.height = 5}
 
 library(pheatmap)
 
@@ -214,12 +205,10 @@ eset <- eset[ ,ord]
 expr <- data.frame(exprs(eset))
 ### normalize expression per gene
 exprNorm <- t(scale(t(expr), center = TRUE, scale = TRUE))
-exprNorm2 <- t(scale(t(expr), center = TRUE, scale = FALSE))
-
 
 ### load list of genes of interest
 
-intrGenes <- read.table("Gene_Sets/niche_interaction_genes_v2_niche_binding.csv", header = TRUE, sep = ",")
+intrGenes <- read.table("Gene_Sets/niche_interaction_genes_v3_niche_binding.csv", header = TRUE, sep = ",")
 intrProbes <- as.character(intrGenes$ProbesetID)
 
 dataHeat <- exprNorm[intrProbes, ]
@@ -236,71 +225,35 @@ labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
 
 
 ### Plot of expression scaled per gene 
-pheatmap(dataHeat, cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 3, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), main = "Niche binding", clustering_method = "single")
-
-
-
-dataHeat <- exprNorm2[intrProbes, ]
-
-annotation_col <- targets[, "groups", drop = FALSE]
-rownames(annotation_col) <- colnames(dataHeat)
-
-cols <- unique(targets$colors)
-names(cols) <- unique(targets$group)
-  
-annotation_colors = list(groups = cols)
-
-labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
-
-
-### Plot of expression scaled per gene 
-pheatmap(dataHeat, cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 4, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), main = "Niche binding", clustering_method = "single")
-
-
-
-
-
-### load list of genes of interest
-
-intrGenes <- read.table("Gene_Sets/niche_interaction_genes_v2_niche_formation.csv", header = TRUE, sep = ",")
-intrProbes <- as.character(intrGenes$ProbesetID)
-
-dataHeat <- exprNorm[intrProbes, ]
-
-annotation_col <- targets[, "groups", drop = FALSE]
-rownames(annotation_col) <- colnames(dataHeat)
-
-cols <- unique(targets$colors)
-names(cols) <- unique(targets$group)
-
-annotation_colors = list(groups = cols)
-
-labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
-
-### Plot of expression scaled per gene
-pheatmap(dataHeat, cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 3, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), main = "Niche formation", clustering_method = "single")
-
-
-
-dataHeat <- exprNorm2[intrProbes, ]
-
-annotation_col <- targets[, "groups", drop = FALSE]
-rownames(annotation_col) <- colnames(dataHeat)
-
-cols <- unique(targets$colors)
-names(cols) <- unique(targets$group)
-
-annotation_colors = list(groups = cols)
-
-labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
-
-### Plot of expression scaled per gene
-pheatmap(dataHeat, cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 4, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), main = "Niche formation", clustering_method = "single")
+pheatmap(dataHeat, color = colorRamps::matlab.like(100), cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 6, fontsize_col = 6, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 3, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), fontsize = 6)
 
 ```
 
 
 
+```{r Heatmaps_afterTreatment_niche_formation, fig.width = 5, fig.height = 5}
+
+
+### load list of genes of interest
+
+intrGenes <- read.table("Gene_Sets/niche_interaction_genes_v3_niche_formation.csv", header = TRUE, sep = ",")
+intrProbes <- as.character(intrGenes$ProbesetID)
+
+dataHeat <- exprNorm[intrProbes, ]
+
+annotation_col <- targets[, "groups", drop = FALSE]
+rownames(annotation_col) <- colnames(dataHeat)
+
+cols <- unique(targets$colors)
+names(cols) <- unique(targets$group)
+
+annotation_colors = list(groups = cols)
+
+labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
+
+### Plot of expression scaled per gene
+pheatmap(dataHeat, color = colorRamps::matlab.like(100), cluster_cols = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = labels_row, annotation_legend = FALSE, fontsize_row = 6, fontsize_col = 6, gaps_col = cumsum(table(targets$groups)), breaks =  seq(from = -3, to = 3, length.out = 101), legend_breaks = seq(from = -3, to = 3, by = 2), fontsize = 6)
+```
 
 
 
