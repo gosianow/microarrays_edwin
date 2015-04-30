@@ -46,11 +46,12 @@ library(ggplot2)
 
 labels <- paste0(ifelse(is.na(targets$ctrlRep), "", paste0(targets$ctrlRep, " ")), targets$labels)
 
+
+
 ### plot MDS for all samples
 pdf("PLOTS_Fig1/MDS.pdf", width = 7, height = 7)
 mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.5, xlim = c(-2, 3), ylim = c(-2, 3), las = 1, cex.axis = 1.5, cex.lab = 1.5)
 dev.off()
-
 
 
 pdf("PLOTS_Fig1/MDS.pdf", width = 5, height = 5)
@@ -80,6 +81,32 @@ dev.off()
 # print(ggp2)
 # 
 # dev.off()
+
+
+
+######### MDS plot based on DE genes
+
+allLines <- readLines("Comp1_DE_results_All.xls", n = -1)[-1]
+resAll <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+colnames(resAll) <- strsplit2(readLines("Comp1_DE_results_All.xls", n = 1), "\t")
+
+resAll <- resAll[, !grepl(pattern = "CEL", colnames(resAll))]
+
+resAllSort <- resAll[order(resAll$CtrlCD4_PValues, resAll$CtrlCD4CD8_PValues, resAll$CtrlCD8_PValues, decreasing = FALSE), ]
+
+resAllSort$clusters <- apply(resAllSort[, c("CtrlCD4_Results", "CtrlCD4CD8_Results", "CtrlCD8_Results")], MARGIN = 1, paste, collapse = ",")
+
+resAllSort <- resAllSort[resAllSort$clusters != "0,0,0", ]
+
+
+
+
+pdf("PLOTS_Fig1/MDS_DE.pdf", width = 5, height = 5)
+
+mds <- plotMDS(eset[resAllSort$ProbesetID, ], top=nrow(resAllSort), col = targets$colors, labels = labels, cex = 1, xlim = c(-2, 2), ylim = c(-2, 2), las = 1, cex.axis = 1, cex.lab = 1)
+
+dev.off()
+
 
 
 

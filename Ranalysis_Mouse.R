@@ -1600,12 +1600,40 @@ write.table(gseaAll, paste("Comp1_GSEA_Hallmark_All.xls", sep=""), sep="\t", row
 
 
 
+
 ###########################################################################
 ### Clustering for all genes based on DE results (-1, 0, 1)
 ###########################################################################
 
+targets <- targets.org
+eset.main <- eset.main.org
+
+### keep only leukemia and control CD4+, CD4+CD8+ and CD8+ samples
+samples2keep <- targets.org$ExperimentShort != "afterTreatment" & targets.org$labels != "control_HeLa" & targets.org$labels != "control_wholeBoneMarrow"
+
+targets <- targets[samples2keep,]
+eset.main <- eset.main[, samples2keep]
+
+### sort samples by groups
+ord <- order(targets$groups)
+targets <- targets[ord, ]
+eset.main <- eset.main[ ,ord]
+
+
+expr <- exprs(eset.main)
+### normalize expression per gene
+exprNorm <- t(scale(t(expr), center = TRUE, scale = TRUE))
+
+
+
+
+####### load the DE results
+
 ## does not work 
 # resAll <- read.table("Comp1_DE_results_All.xls", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+library(limma)
+
 
 allLines <- readLines("Comp1_DE_results_All.xls", n = -1)[-1]
 resAll <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
@@ -1629,11 +1657,15 @@ resAllSort$clusters <- factor(resAllSort$clusters, levels = clusters)
 
 resAllSort <- resAllSort[order(resAllSort$clusters), ]
 
-unique(resAllSort$clusters)
+# unique(resAllSort$clusters)
+
+### number of genes in clusters
+table(resAllSort$clusters)
 
 
 
 
+##### Create a heat map with all the clusters
 
 intrProbes <- as.character(resAllSort$ProbesetID)
 
@@ -1648,13 +1680,14 @@ names(cols) <- unique(targets$group)
 
 annotation_colors = list(groups = cols)
 
-labels_row <- strsplit2(intrGenes$GeneSymbol, " /// ")[, 1]
+labels_row <- strsplit2(resAllSort$GeneSymbol, " /// ")[, 1]
+
+library(pheatmap)
 
 
+pdf("PLOTS/heatmap_clusters.pdf", width = 7, height = 10)
 
-png("PLOTS_Fig1/heatmap_all.png", width = 700, height = 2000)
-
-pheatmap(dataHeat, cluster_cols = FALSE, cluster_rows = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = rep("", nrow(dataHeat)), annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), gaps_row = cumsum(table(resAllSort$clusters)),breaks =  seq(from = -4, to = 4, length.out = 101), legend_breaks = seq(from = -4, to = 4, by = 2))
+pheatmap(dataHeat, color = colorRamps::matlab.like(100), cluster_cols = FALSE, cluster_rows = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = rep("", nrow(dataHeat)), annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), gaps_row = cumsum(table(resAllSort$clusters)),breaks =  seq(from = -4, to = 4, length.out = 101), legend_breaks = seq(from = -4, to = 4, by = 2))
 
 dev.off()
 
@@ -1665,9 +1698,227 @@ write.table(resAllSort, file = "Comp1_DEclusters.xls", quote = FALSE, sep = "\t"
 
 
 
+###########################################################################
+#### GO analysis per cluster 
+###########################################################################
+
+# source("http://bioconductor.org/biocLite.R")
+# biocLite("topGO")
+# source("http://bioconductor.org/biocLite.R")
+# biocLite("Rgraphviz")
+
+library(topGO)
+library(Rgraphviz)
+
+
+affyLib <- "mogene20sttranscriptcluster.db"
+
+### Function used to create new topGOdata object
+fun.gene.sel <- function(geneList) {
+  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
+}
+
+### keep the clusters with at least 50 genes
+cls <- levels(resAllSort$clusters)[table(resAllSort$clusters) > 50]
+
+
+allResList <- list()
+
+for(cl in cls){
+  # cl <- cls[1]
+  
+  
+  geneList <- rep(0, nrow(resAll))
+  names(geneList) <- resAll$ProbesetID
+  geneList[resAllSort[resAllSort$clusters == cl, "ProbesetID"]] <- 1
+  table(geneList)
+  
+  
+  for(go in c("BP","MF","CC")){
+    # go = "BP"
+    
+    cat("Cluster:", cl, "go:", go, "\n")
+
+    sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", cl), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
+    
+#     print(sampleGOdata)
+    
+    result <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
+    
+    pValues <- score(result)
+    topNodes <- length(pValues)
+    
+    allRes <- GenTable(sampleGOdata, elimFisher = result, orderBy = "elimFisher", topNodes = topNodes)      
+    colnames(allRes)[6] <- "PValues" 
+    allRes$GO <- go
+    
+    
+#     pdf(paste("PLOTS/GO_",cl, "_" ,go, ".pdf", sep=""))
+#     showSigOfNodes(sampleGOdata, score(result), firstSigNodes = 5, useInfo = 'all')
+#     dev.off()
+    
+    allRes$AdjPValues <- p.adjust(allRes$PValues, method = "BH")
+    
+#     cat("#########################################################################################", fill = TRUE)
+#     print(table(allRes$AdjPValues < 0.05))
+#     print(head(allRes, 20))
+#     cat("#########################################################################################", fill = TRUE)
+    
+    
+    # write.table(allRes, paste("Comp1_GO_Fisher_elim_",cl, "_", go ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+    
+    allResList[[paste0(cl, "_", go)]] <- allRes
+    
+    
+  }
+  
+}
+
+
+save(allResList, file = "Comp1_GO_Clusters_Fisher_elim.rdata")
+
+#### save results 
+
+for(go in c("BP","MF","CC")){
+  
+  cl <- cls[1]
+  allR <- allResList[[paste0(cl, "_", go)]]
+  allAll <- allR[, c("GO.ID", "GO", "Term", "Annotated")]  
+
+  for(cl in cls){
+    # cl = cls[1]
+      
+    allR <- allResList[[paste0(cl, "_", go)]][, c("GO.ID", "Significant", "Expected", "PValues", "AdjPValues")] 
+    ### add cluster names to columns
+    colnames(allR) <- paste0(c("", rep(paste0("CL(",cl, ")_"), 4)), colnames(allR))
+        
+    ### merge all results into one table
+    allAll <- merge(allAll, allR, by = "GO.ID", sort = FALSE)
+    
+  }
+
+  
+  write.table(allAll, paste0("Comp1_GO_Clusters_Fisher_elim_", go ,".xls"), sep="\t", row.names=F, quote = FALSE)
+  
+}
+
+
+
 
 ###########################################################################
-#### GO analysis
+#### GO analysis per control - up or down regulation 
+###########################################################################
+
+library(topGO)
+library(Rgraphviz)
+
+
+affyLib <- "mogene20sttranscriptcluster.db"
+
+### Function used to create new topGOdata object
+fun.gene.sel <- function(geneList) {
+  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
+}
+
+
+cls <- rep(c(-1, 1), times = 4)
+names(cls) <- rep(c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8", "CtrlBM"), each = 2)
+
+allResList <- list()
+
+for(cl in 1:length(cls)){
+  # cl <- cls[1]
+  
+  cl <- cls[cl]
+  
+  print(cl)
+  geneList <- rep(0, nrow(resAll))
+  names(geneList) <- resAll$ProbesetID
+  
+  geneList[resAll[resAll[, paste0(names(cl), "_Results")] == cl, "ProbesetID"]] <- 1
+  
+  table(geneList)
+  
+  cl <- paste0(names(cl),".", cl)
+  
+  for(go in c("BP","MF","CC")){
+    # go = "BP"
+    
+    cat("Cluster:", cl, "go:", go, "\n")
+    
+    sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", cl), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
+    
+    #     print(sampleGOdata)
+    
+    result <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
+    
+    pValues <- score(result)
+    topNodes <- length(pValues)
+    
+    allRes <- GenTable(sampleGOdata, elimFisher = result, orderBy = "elimFisher", topNodes = topNodes)      
+    colnames(allRes)[6] <- "PValues" 
+    allRes$GO <- go
+    
+    
+    #     pdf(paste("PLOTS/GO_",cl, "_" ,go, ".pdf", sep=""))
+    #     showSigOfNodes(sampleGOdata, score(result), firstSigNodes = 5, useInfo = 'all')
+    #     dev.off()
+    
+    allRes$AdjPValues <- p.adjust(allRes$PValues, method = "BH")
+    
+    #     cat("#########################################################################################", fill = TRUE)
+    #     print(table(allRes$AdjPValues < 0.05))
+    #     print(head(allRes, 20))
+    #     cat("#########################################################################################", fill = TRUE)
+    
+    
+    # write.table(allRes, paste("Comp1_GO_Fisher_elim_",cl, "_", go ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+    
+    allResList[[paste0(cl, "_", go)]] <- allRes
+    
+    
+  }
+  
+}
+
+
+save(allResList, file = "Comp1_GO_UpDown_Fisher_elim.rdata")
+
+
+#### save results 
+
+
+cls <- paste0(names(cls), "." ,cls)
+
+for(go in c("BP","MF","CC")){
+  
+  cl <- cls[1]
+
+  allR <- allResList[[paste0(cl, "_", go)]]
+  allAll <- allR[, c("GO.ID", "GO", "Term", "Annotated")]  
+  
+  for(cl in cls){
+    # cl = cls[1]
+    
+    allR <- allResList[[paste0(cl, "_", go)]][, c("GO.ID", "Significant", "Expected", "PValues", "AdjPValues")] 
+    ### add cluster names to columns
+    colnames(allR) <- paste0(c("", rep(paste0("CL(",cl, ")_"), 4)), colnames(allR))
+    
+    ### merge all results into one table
+    allAll <- merge(allAll, allR, by = "GO.ID", sort = FALSE)
+    
+  }
+  
+  
+  write.table(allAll, paste0("Comp1_GO_UpDown_Fisher_elim_", go ,".xls"), sep="\t", row.names=F, quote = FALSE)
+  
+}
+
+
+
+
+###########################################################################
+#### GO analysis per control 
 ###########################################################################
 
 # source("http://bioconductor.org/biocLite.R")
@@ -1776,24 +2027,6 @@ for(go in c("BP","MF","CC")){
 
 
 
-### using information from eBayes fitting: fit2
-
-pdf(paste0("PLOTS/GO_barcodeplot_",coef,".pdf"))
-
-topgs <- 1
-gsn <-rownames(gsea[[coef]])[1:topgs] 
-gss <- gsea.tmp[gsn, , drop = FALSE]
-
-for(i in 1:length(topgs)){
-  
-  barcodeplot(statistics = as.numeric((fit2$p.value[, coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Not significant","Significant"), quantiles = c(0.05,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
-  
-  
-}
-
-dev.off()
-
-
 
 
 ###########################################################################
@@ -1841,7 +2074,7 @@ dev.off()
 
 
 
-###########################################################################
+########################################################################### Index for CAMERA
 
 # gene sets from MSigDB with ENTREZ IDs / C6 - oncogenic signatures
 load("MSigDB_v4_0/mouse_c6_v4.rdata")
@@ -1869,7 +2102,7 @@ Index <- lapply(mysets, function(ms){
 
 
 
-###########################################################################
+########################################################################### DE analysis + CAMERA analysis 
 
 
 
