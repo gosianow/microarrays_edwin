@@ -4,6 +4,12 @@
 
 # Generate plots for Figure 1
 
+# Update 4 June 2015
+# Use points in MDS plot for pre vs after treatment 
+
+# Update 28 July 2015
+# MDS with pre, post and controles (points)
+
 ###########################################################################
 
 setwd("/home/Shared/data/array/Microarray_Edwin")
@@ -28,7 +34,11 @@ x <- oligo::read.celfiles(filenames = ff)
 
 eset.org <- oligo::rma(x) 
 
+
+###########################################################################
 ####### Keep only the control and leukemia samples
+###########################################################################
+
 
 keepSAMPS <- targets.org$ExperimentShort != "afterTreatment" & targets.org$labels != "control_HeLa" & targets.org$labels != "control_wholeBoneMarrow"
 
@@ -36,9 +46,9 @@ eset <- eset.org[, keepSAMPS]
 targets <- targets.org[keepSAMPS, ]
 
 
-###########################################################################
+######################
 ### MDS plot
-###########################################################################
+######################
 
 library(limma)
 library(ggplot2)
@@ -47,18 +57,12 @@ library(ggplot2)
 labels <- paste0(ifelse(is.na(targets$ctrlRep), "", paste0(targets$ctrlRep, " ")), targets$labels)
 
 
-
-### plot MDS for all samples
-pdf("PLOTS_Fig1/MDS.pdf", width = 7, height = 7)
-mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.5, xlim = c(-2, 3), ylim = c(-2, 3), las = 1, cex.axis = 1.5, cex.lab = 1.5)
-dev.off()
-
-
 pdf("PLOTS_Fig1/MDS.pdf", width = 5, height = 5)
 
 mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1, xlim = c(-2, 3), ylim = c(-2, 3), las = 1, cex.axis = 1, cex.lab = 1)
 
 dev.off()
+
 
 
 # df <- data.frame(x = mds$x, y = mds$y, labels = factor(labels), colors = factor(targets$colors))
@@ -111,9 +115,9 @@ dev.off()
 
 
 
-###########################################################################
+#################
 ### Heatmaps
-###########################################################################
+#################
 
 library(pheatmap)
 library(limma)
@@ -184,17 +188,98 @@ dev.off()
 
 
 
+###########################################################################
+####### Keep only the after vs. before treatment samples
+###########################################################################
+
+
+keepSAMPS <- targets.org$ExperimentShort == "afterTreatment" | targets.org$ExperimentShort == "leukemia"
+
+eset <- eset.org[, keepSAMPS]
+targets <- targets.org[keepSAMPS, ]
+
+
+######################
+### MDS plot
+######################
+library(limma)
+
+
+labels <- targets$labels
+
+labels_short <- strsplit2(targets$labels, "_")[,2]
+col_text <- targets$colors
+col_text[col_text == "#8B8386"] <- "black"
+col_text[col_text == "#EE2C2C"] <- "firebrick"
+
+
+color_transparent <- adjustcolor(targets$colors, alpha.f = 0.8) 
+
+
+pdf("PLOTS_Fig1/MDS.pdf", width = 5, height = 5)
+
+# mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1, xlim = c(-2, 3), ylim = c(-2, 3), las = 1, cex.axis = 1, cex.lab = 1)
+
+plot(mds$x, mds$y, pch = 16, col = color_transparent, cex = 1.2, xlim = c(-2, 2), ylim = c(-2, 2), las = 1, cex.axis = 1, cex.lab = 1, xlab = "Leading logFC dim 1", ylab = "Leading logFC dim 2")
+
+text(mds$x, mds$y, labels = labels_short, col = col_text, pos = 3, offset = 0.3, cex = 0.6)
+
+legend("topleft", legend = c("Leukemia", "After treatment"), pch = 16, col = adjustcolor(c("#8B8386", "#EE2C2C"), alpha.f = 0.8))
+
+dev.off()
+
+
+
+pdf("PLOTS_Fig1/MDS.pdf", width = 5, height = 5)
+
+# mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1, xlim = c(-2, 3), ylim = c(-2, 3), las = 1, cex.axis = 1, cex.lab = 1)
+
+plot(mds$x, mds$y, pch = 16, col = color_transparent, cex = 1.3, xlim = c(-2, 2), ylim = c(-2, 2), las = 1, cex.axis = 1, cex.lab = 1, xlab = "Leading logFC dim 1", ylab = "Leading logFC dim 2")
+
+text(mds$x, mds$y, labels = labels_short, col = col_text, pos = c(1,3,3,3,1,3,3,3,3,1,3), offset = 0.3, cex = 0.7)
+
+legend("topleft", legend = c("Leukemia", "After treatment"), pch = 16, col = adjustcolor(c("#8B8386", "#EE2C2C"), alpha.f = 0.8))
+
+dev.off()
 
 
 
 
+###########################################################################
+####### Keep control pre and post treatment samples
+###########################################################################
 
 
+keepSAMPS <- targets.org$CellTypeShort != "HeLa" 
+
+eset <- eset.org[, keepSAMPS]
+targets <- targets.org[keepSAMPS, ]
+
+######################
+### MDS plot
+######################
+library(limma)
 
 
+labels_short <- ifelse(is.na(targets$ctrlRep), targets$CellTypeShort, targets$ctrlRep)
+col_text <- targets$colors
+color_transparent <- adjustcolor(targets$colors, alpha.f = 0.6) 
+
+legend <- unique(targets[, c("groups", "colors")])
 
 
+mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels_short, cex = 0.8, xlim = c(-3, 2), ylim = c(-3, 2), las = 1, cex.axis = 1, cex.lab = 1)
 
+
+pdf("PLOTS_afteReview/MDS_all.pdf", width = 5, height = 5)
+
+plot(mds$x, mds$y, pch = 16, col = color_transparent, cex = 1, xlim = c(-3, 2), ylim = c(-3, 2), las = 1, cex.axis = 1, cex.lab = 1, xlab = "Leading logFC dim 1", ylab = "Leading logFC dim 2")
+
+text(mds$x, mds$y, labels = labels_short, col = col_text, pos = 3, offset = 0.3, cex = 0.3)
+
+legend("bottomleft", legend = legend$groups, pch = 16, col = adjustcolor(legend$colors, alpha.f = 0.6) , cex = 0.8, bty = "n")
+
+dev.off()
 
 
 

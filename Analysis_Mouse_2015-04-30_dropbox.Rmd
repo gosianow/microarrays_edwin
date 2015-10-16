@@ -1,7 +1,7 @@
 ---
 title: "Leukemia DE analysis for Edwin"
 author: "Gosia Nowicka"
-date: "20 Mar 2015"
+date: "30 Apr 2015"
 output: 
   html_document:
     toc: true
@@ -21,7 +21,7 @@ options(width=100)
 
 Load targets table with information about samples.
 
-```{r}
+```{r Targets}
 targets <- read.table(file.path("metadata", "targets.xls"), header = TRUE, sep = "\t", comment.char = "", as.is = TRUE)
 
 targets
@@ -30,7 +30,7 @@ targets
 
 Load Affy CEL data using `oligo` package. Plot the distributions of raw probe expression in all samples.
 
-```{r}
+```{r CEL}
 library(oligo)
 library(pd.mogene.2.0.st)
 
@@ -51,7 +51,7 @@ legend("topright", legend = targets$labels, col =  targets$colors, lty = 1, lwd 
 
 Run `fitProbeLevelModel` and create NUSE and RLE plots (https://genevestigator.com/userdocs/manual/qc.html).
 
-```{r}
+```{r PLM}
 fitplm <- oligo::fitProbeLevelModel(x)
 
 par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
@@ -64,7 +64,7 @@ oligo::RLE(fitplm, col = targets$colors, names = targets$labels, las=2)
 
 # Normalize data with RMA method
 
-```{r}
+```{r RMA}
 eset.org <- eset <- oligo::rma(x) ## Is the expression in log2 scale?
 
 par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
@@ -94,7 +94,7 @@ ggdendrogram(hc, theme_dendro = TRUE) + theme(axis.text.x = element_text(colour 
 
 ```
 
-```{r}
+```{r Filtering_Hela}
 ####### Do NOT keep the HeLa sample for the rest of the analysis
 
 keepSAMPS <- targets$labels != "control_HeLa"
@@ -109,7 +109,7 @@ targets.org <- targets <- targets[keepSAMPS, ]
 
 # Get NetAffx annotation of probesets
 
-```{r}
+```{r NetAffx}
 ####### NetAffx Annotation with getNetAffx()
 
 infoNetAffx <- pData(getNetAffx(eset, "transcript"))
@@ -124,7 +124,7 @@ colnames(infoNetAffx)
 Keep only the main probes.
 
 
-```{r}
+```{r Filtering_main}
 table(infoNetAffx$category, useNA = "always")
 
 keepMAIN <- infoNetAffx$category == "main"
@@ -137,7 +137,7 @@ eset.main <- eset[keepMAIN, ]
 
 Keep only the probes that come from chr 1-19, X and Y.
 
-```{r}
+```{r Filtering_chr}
 keepCHR <- featureNames(eset.main) %in% rownames(infoNetAffx)[which(infoNetAffx$seqname %in% paste0("chr", c(1:19, "Y", "X")), useNames = TRUE)]
 
 table(keepCHR)
@@ -151,7 +151,7 @@ eset.main <- eset.main[keepCHR, ]
 
 http://www.affymetrix.com/analysis/index.affx
 
-```{r}
+```{r Annot_AffyWeb}
 library(limma)
 
 ### files that are formated for easy load 
@@ -176,7 +176,7 @@ annot <- gl[ featureNames(eset.main) ,c("GeneSymbol", "EntrezGeneID", "GeneTitle
 
 # Get ENSEMBL annotation using biomaRt
 
-```{r}
+```{r Annot_Ensembl}
 
 library(biomaRt)
 
@@ -214,7 +214,7 @@ eset.main.org <- eset.main
 
 Filter probesets with low expression. For that use the background information from antigenomic probesets and GC content.
 
-```{r}
+```{r Filtering_lowExpr}
 ### Get probe 2 transcript match
 probeInfo <- oligo::getProbeInfo(x, field = c('fid', 'fsetid', 'level', 'type', 'transcript_cluster_id'), probeType = "pm", target='core')
 
@@ -291,9 +291,9 @@ transInfo$minExpr <- as.numeric(as.character(transInfo$minExpr))
 
 # Comparison 1: control VS leukemia
 
-Compare leukemia samples versus 3 different controls: CD4+, CD4+CD8+ and CD8+ and bone marrow.
+Compare leukemia samples versus different controls: CD4+, CD4+CD8+ and CD8+ and bone marrow.
 
-```{r}
+```{r Comp1}
 targets <- targets.org
 eset.main <- eset.main.org
 
@@ -395,7 +395,7 @@ write.table(resAll, file = "Comp1_DE_results_All.xls", quote = FALSE, sep = "\t"
 ```
 
 
-```{r, echo = FALSE}
+```{r multiplot, echo = FALSE}
 # Multiple plot function
 #
 # ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
@@ -447,7 +447,7 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
 
 
 
-```{r, fig.width = 11, fig.height = 11}
+```{r Comp1_plots, fig.width = 11, fig.height = 11}
 par(mfrow=c(2,2))
 
 ### plot MA
@@ -495,7 +495,7 @@ par(mfrow=c(1,1))
 
 Plot expression of top significant genes/probe sets.
 
-```{r, fig.width = 11, fig.height = 11}
+```{r Comp1_plotExpr, fig.width = 11, fig.height = 11}
 
 library(ggplot2)
 library(reshape2)
@@ -547,7 +547,7 @@ for(i in 1:length(coefs)){
 
 ## Gene set enrichment analysis with C5 - GO genes sets
 
-```{r}
+```{r Comp1_GSEA_C5}
 
 # gene sets from MSigDB with ENTREZ IDs
 load("MSigDB_v4_0/mouse_c5_v4.rdata")
@@ -678,7 +678,7 @@ write.table(gseaAll, paste("Comp1_GSEA_C5_All.xls", sep=""), sep="\t", row.names
 
 ## Gene set enrichment analysis with C7 - Immunologic genes sets
 
-```{r gene sets}
+```{r Comp1_GSEA_C7}
 # gene sets from MSigDB with ENTREZ IDs
 load("MSigDB_v4_0/mouse_c7_v4.rdata")
 
@@ -750,7 +750,7 @@ write.table(gseaAll, paste("Comp1_GSEA_C7_All.xls", sep=""), sep="\t", row.names
 
 ## Gene set enrichment analysis with Hallmark genes sets
 
-```{r}
+```{r GSEA_Hallmark}
 ############### Create mouse_hallmark_v5.rdata object like on WEHI web
 
 allLines <- readLines("MSigDB_v4_0/h.all.v5.0.entrez.gmt", n = -1)
@@ -793,7 +793,7 @@ save(Mm.hallmark, file = "MSigDB_v4_0/mouse_hallmark_v5.rdata")
 ```
 
 
-```{r}
+```{r Comp1_GSEA_Hallmark}
 
 # gene sets from MSigDB with ENTREZ IDs
 load("MSigDB_v4_0/mouse_hallmark_v5.rdata")
@@ -922,10 +922,312 @@ write.table(gseaAll, paste("Comp1_GSEA_Hallmark_All.xls", sep=""), sep="\t", row
 
 ```
 
+## Clustering all genes based on DE results
 
-## GO analysis
+```{r Comp1_clustering_heatmap, fig.width = 7, fig.height = 11}
 
-```{r GO, results = "hide", eval = FALSE}
+targets <- targets.org
+eset.main <- eset.main.org
+
+### keep only leukemia and control CD4+, CD4+CD8+ and CD8+ samples
+samples2keep <- targets.org$ExperimentShort != "afterTreatment" & targets.org$labels != "control_HeLa" & targets.org$labels != "control_wholeBoneMarrow"
+
+targets <- targets[samples2keep,]
+eset.main <- eset.main[, samples2keep]
+
+### sort samples by groups
+ord <- order(targets$groups)
+targets <- targets[ord, ]
+eset.main <- eset.main[ ,ord]
+
+
+expr <- exprs(eset.main)
+### normalize expression per gene
+exprNorm <- t(scale(t(expr), center = TRUE, scale = TRUE))
+
+
+
+
+####### load the DE results
+
+library(limma)
+
+allLines <- readLines("Comp1_DE_results_All.xls", n = -1)[-1]
+resAll <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+colnames(resAll) <- strsplit2(readLines("Comp1_DE_results_All.xls", n = 1), "\t")
+
+resAll <- resAll[, !grepl(pattern = "CEL", colnames(resAll))]
+
+resAllSort <- resAll[order(resAll$CtrlCD4_PValues, resAll$CtrlCD4CD8_PValues, resAll$CtrlCD8_PValues, decreasing = FALSE), ]
+
+resAllSort$clusters <- apply(resAllSort[, c("CtrlCD4_Results", "CtrlCD4CD8_Results", "CtrlCD8_Results")], MARGIN = 1, paste, collapse = ",")
+
+resAllSort <- resAllSort[resAllSort$clusters != "0,0,0", ]
+
+
+library(gtools)
+
+clusters <- apply(permutations(n=3, r=3, v = c(-1, 0, 1), repeats.allowed=TRUE), MARGIN = 1, paste, collapse = ",")
+clusters <- clusters[clusters != "0,0,0"]
+
+resAllSort$clusters <- factor(resAllSort$clusters, levels = clusters)
+
+resAllSort <- resAllSort[order(resAllSort$clusters), ]
+
+# unique(resAllSort$clusters)
+
+### number of genes in clusters
+table(resAllSort$clusters)
+
+
+##### Create a heat map with all the clusters
+
+intrProbes <- as.character(resAllSort$ProbesetID)
+
+# dataHeat <- expr[intrProbes, ]
+dataHeat <- exprNorm[intrProbes, ]
+
+annotation_col <- targets[, "groups", drop = FALSE]
+rownames(annotation_col) <- colnames(dataHeat)
+
+cols <- unique(targets$colors)
+names(cols) <- unique(targets$group)
+
+annotation_colors = list(groups = cols)
+
+labels_row <- strsplit2(resAllSort$GeneSymbol, " /// ")[, 1]
+
+
+
+library(pheatmap)
+
+pheatmap(dataHeat, color = colorRamps::matlab.like(100), cluster_cols = FALSE, cluster_rows = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = rep("", nrow(dataHeat)), annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), gaps_row = cumsum(table(resAllSort$clusters)),breaks =  seq(from = -4, to = 4, length.out = 101), legend_breaks = seq(from = -4, to = 4, by = 2))
+
+
+write.table(resAllSort, file = "Comp1_DEclusters.xls", quote = FALSE, sep = "\t", row.names = FALSE)
+
+
+
+```
+
+
+## GO analysis per cluster
+
+```{r Comp1_GO_clus, results = "hide", eval = FALSE}
+
+library(topGO)
+library(Rgraphviz)
+
+
+affyLib <- "mogene20sttranscriptcluster.db"
+
+### Function used to create new topGOdata object
+fun.gene.sel <- function(geneList) {
+  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
+}
+
+### keep the clusters with at least 50 genes
+cls <- levels(resAllSort$clusters)[table(resAllSort$clusters) > 50]
+
+
+allResList <- list()
+
+for(cl in cls){
+  # cl <- cls[1]
+  
+  
+  geneList <- rep(0, nrow(resAll))
+  names(geneList) <- resAll$ProbesetID
+  geneList[resAllSort[resAllSort$clusters == cl, "ProbesetID"]] <- 1
+  table(geneList)
+  
+  
+  for(go in c("BP","MF","CC")){
+    # go = "BP"
+    
+    cat("Cluster:", cl, "go:", go, "\n")
+
+    sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", cl), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
+    
+#     print(sampleGOdata)
+    
+    result <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
+    
+    pValues <- score(result)
+    topNodes <- length(pValues)
+    
+    allRes <- GenTable(sampleGOdata, elimFisher = result, orderBy = "elimFisher", topNodes = topNodes)      
+    colnames(allRes)[6] <- "PValues" 
+    allRes$GO <- go
+    
+    
+#     pdf(paste("PLOTS/GO_",cl, "_" ,go, ".pdf", sep=""))
+#     showSigOfNodes(sampleGOdata, score(result), firstSigNodes = 5, useInfo = 'all')
+#     dev.off()
+    
+    allRes$AdjPValues <- p.adjust(allRes$PValues, method = "BH")
+    
+#     cat("#########################################################################################", fill = TRUE)
+#     print(table(allRes$AdjPValues < 0.05))
+#     print(head(allRes, 20))
+#     cat("#########################################################################################", fill = TRUE)
+    
+    
+    # write.table(allRes, paste("Comp1_GO_Fisher_elim_",cl, "_", go ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+    
+    allResList[[paste0(cl, "_", go)]] <- allRes
+    
+    
+  }
+  
+}
+
+
+#### save results 
+
+for(go in c("BP","MF","CC")){
+  
+  cl <- cls[1]
+  allR <- allResList[[paste0(cl, "_", go)]]
+  allAll <- allR[, c("GO.ID", "GO", "Term", "Annotated")]  
+
+  for(cl in cls){
+    # cl = cls[1]
+      
+    allR <- allResList[[paste0(cl, "_", go)]][, c("GO.ID", "Significant", "Expected", "PValues", "AdjPValues")] 
+    ### add cluster names to columns
+    colnames(allR) <- paste0(c("", rep(paste0("CL(",cl, ")_"), 4)), colnames(allR))
+        
+    ### merge all results into one table
+    allAll <- merge(allAll, allR, by = "GO.ID", sort = FALSE)
+    
+  }
+
+  
+  write.table(allAll, paste0("Comp1_GO_Clusters_Fisher_elim_", go ,".xls"), sep="\t", row.names=F, quote = FALSE)
+  
+}
+
+
+```
+
+
+
+## GO analysis per control samples (up and down-regulated genes separetely) 
+
+```{r Comp1_GO_sampUpDown, results = "hide", eval = FALSE}
+
+library(topGO)
+library(Rgraphviz)
+
+
+affyLib <- "mogene20sttranscriptcluster.db"
+
+### Function used to create new topGOdata object
+fun.gene.sel <- function(geneList) {
+  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
+}
+
+
+cls <- rep(c(-1, 1), times = 4)
+names(cls) <- rep(c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8", "CtrlBM"), each = 2)
+
+allResList <- list()
+
+for(cl in 1:length(cls)){
+  # cl <- cls[1]
+  
+  cl <- cls[cl]
+  
+  print(cl)
+  geneList <- rep(0, nrow(resAll))
+  names(geneList) <- resAll$ProbesetID
+  
+  geneList[resAll[resAll[, paste0(names(cl), "_Results")] == cl, "ProbesetID"]] <- 1
+  
+  table(geneList)
+  
+  cl <- paste0(names(cl),".", cl)
+  
+  for(go in c("BP","MF","CC")){
+    # go = "BP"
+    
+    cat("Cluster:", cl, "go:", go, "\n")
+    
+    sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", cl), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
+    
+    #     print(sampleGOdata)
+    
+    result <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
+    
+    pValues <- score(result)
+    topNodes <- length(pValues)
+    
+    allRes <- GenTable(sampleGOdata, elimFisher = result, orderBy = "elimFisher", topNodes = topNodes)      
+    colnames(allRes)[6] <- "PValues" 
+    allRes$GO <- go
+    
+    
+    #     pdf(paste("PLOTS/GO_",cl, "_" ,go, ".pdf", sep=""))
+    #     showSigOfNodes(sampleGOdata, score(result), firstSigNodes = 5, useInfo = 'all')
+    #     dev.off()
+    
+    allRes$AdjPValues <- p.adjust(allRes$PValues, method = "BH")
+    
+    #     cat("#########################################################################################", fill = TRUE)
+    #     print(table(allRes$AdjPValues < 0.05))
+    #     print(head(allRes, 20))
+    #     cat("#########################################################################################", fill = TRUE)
+    
+    
+    # write.table(allRes, paste("Comp1_GO_Fisher_elim_",cl, "_", go ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
+    
+    allResList[[paste0(cl, "_", go)]] <- allRes
+    
+    
+  }
+  
+}
+
+
+save(allResList, file = "Comp1_GO_UpDown_Fisher_elim.rdata")
+
+
+#### save results 
+
+
+cls <- paste0(names(cls), "." ,cls)
+
+for(go in c("BP","MF","CC")){
+  
+  cl <- cls[1]
+
+  allR <- allResList[[paste0(cl, "_", go)]]
+  allAll <- allR[, c("GO.ID", "GO", "Term", "Annotated")]  
+  
+  for(cl in cls){
+    # cl = cls[1]
+    
+    allR <- allResList[[paste0(cl, "_", go)]][, c("GO.ID", "Significant", "Expected", "PValues", "AdjPValues")] 
+    ### add cluster names to columns
+    colnames(allR) <- paste0(c("", rep(paste0("CL(",cl, ")_"), 4)), colnames(allR))
+    
+    ### merge all results into one table
+    allAll <- merge(allAll, allR, by = "GO.ID", sort = FALSE)
+    
+  }
+  
+  
+  write.table(allAll, paste0("Comp1_GO_UpDown_Fisher_elim_", go ,".xls"), sep="\t", row.names=F, quote = FALSE)
+  
+}
+
+
+```
+
+## GO analysis per control samples (up and down-regulated genes together)
+
+```{r Comp1_GO_samp, results = "hide", eval = FALSE}
 
 # results = "hide"
 # include=FALSE
@@ -1030,7 +1332,7 @@ for(go in c("BP","MF","CC")){
 
 ## All leukemia VS afterTreatment samples
 
-```{r}
+```{r Comp2_All_data}
 targets <- targets.org
 eset.main <- eset.main.org
 
@@ -1061,14 +1363,9 @@ eset.main <- eset.main[keepEXPR, ]
 eset.main
 
 
-
-
 ### plot MDS
-pdf("PLOTS/MDS_norm_Comp2.pdf")
+
 mds <- plotMDS(eset.main, top=500, col = targets$colors, labels = targets$labels, cex = 1.2, xlim = c(-2, 3), ylim = c(-2, 3))
-dev.off()
-
-
 
 
 ###########################################################################
@@ -1107,7 +1404,7 @@ Index <- lapply(mysets, function(ms){
 
 ### Account for the Cell Type
 
-```{r}
+```{r Comp2_All_Cell}
 #### design & analysis
 
 treatments <- data.frame(Treatment = as.character(targets$groups), CellType = as.character(targets$CellTypeShort))
@@ -1149,7 +1446,7 @@ table(gsea$FDR < 0.05)
 
 ### Do not account for the Cell Type
 
-```{r}
+```{r Comp2_All_noCell}
 #### design & analysis
 
 treatments <- data.frame(Treatment = as.character(targets$groups), CellType = as.character(targets$CellTypeShort))
@@ -1194,7 +1491,7 @@ table(gsea$FDR < 0.05)
 
 ## 907 and B2M3 leukemia VS afterTreatment samples
 
-```{r}
+```{r Comp2_Match_data}
 targets <- targets.org
 eset.main <- eset.main.org
 
@@ -1255,7 +1552,7 @@ Index <- lapply(mysets, function(ms){
 
 ### Account for the Cell Type
 
-```{r}
+```{r Comp2_Match_Cell}
 #### design & analysis
 
 treatments <- data.frame(Treatment = as.character(targets$groups), CellType = as.character(targets$CellTypeShort))
@@ -1300,7 +1597,7 @@ table(gsea$FDR < 0.05)
 
 ### Do not account for the Cell Type
 
-```{r}
+```{r Comp2_Match_noCell}
 
 #### design & analysis
 
@@ -1343,7 +1640,7 @@ table(gsea$FDR < 0.05)
 
 
 
-```{r}
+```{r sessionInfo}
 sessionInfo()
 ```
 

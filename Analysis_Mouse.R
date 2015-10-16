@@ -19,7 +19,7 @@
 # - add pre VS after treatment analysis
 # 17 Apr 2015
 # - add barcodeplots in the gene set analysis 
-# 29 Apr 2015
+# 30 Apr 2015
 # - clustering + GO on clusters
 
 ###########################################################################
