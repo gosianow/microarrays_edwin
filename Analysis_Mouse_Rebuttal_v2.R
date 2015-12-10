@@ -7,6 +7,9 @@
 
 # Pre versus after treatment analysis 
 
+# Modified 10 Dec 2015
+# GO analysis 
+
 ###########################################################################
 
 setwd("/home/Shared/data/array/microarrays_edwin")
@@ -26,6 +29,9 @@ library(pd.mogene.2.0.st)
 library(ggplot2)
 library(reshape2)
 library(biomaRt)
+library(topGO)
+library(Rgraphviz)
+library(mogene20sttranscriptcluster.db)
 
 
 ###########################################################################
@@ -1205,7 +1211,6 @@ res_name <- "afterTreatment_matched_paired_noTechnical_"
 comp_name <- "3c"
 
 
-
 library(oligo)
 library(pd.mogene.2.0.st)
 library(limma)
@@ -1552,227 +1557,443 @@ dev.off()
 
 
 
-
-
 ###########################################################################
-#### GO analysis per control - up and down regulation separetely
+#### GO analysis for comparison 3c
 ###########################################################################
 
-library(topGO)
-library(Rgraphviz)
+res_name <- "afterTreatment_matched_paired_noTechnical_"
+comp_name <- "3c"
+
+
+allLines <- readLines(paste0(path_results, "Comp", comp_name ,"_DE_results_All.xls"), n = -1)[-1]
+resAll <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+colnames(resAll) <- strsplit2(readLines(paste0(path_results, "Comp", comp_name ,"_DE_results_All.xls"), n = 1), "\t")
+
 
 
 affyLib <- "mogene20sttranscriptcluster.db"
 
+ls("package:mogene20sttranscriptcluster.db")
+
+
 ### Function used to create new topGOdata object
 fun.gene.sel <- function(geneList) {
-  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
+  geneList <- ifelse(geneList == 0, FALSE, TRUE)
+  return(geneList)
 }
 
 
-cls <- rep(c(-1, 1), times = 4)
-names(cls) <- rep(c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8", "CtrlBM"), each = 2)
+tt <- resAll[, c("ProbesetID", paste0(res_name, "Results"))]
+geneList <- as.numeric(as.numeric(tt[, 2]) != 0)
+names(geneList) <- tt[, 1]
+print(table(geneList))
 
-allResList <- list()
+table(fun.gene.sel(geneList))
 
-for(cl in 1:length(cls)){
-  # cl <- cls[1]
-  
-  cl <- cls[cl]
-  
-  print(cl)
-  geneList <- rep(0, nrow(resAll))
-  names(geneList) <- resAll$ProbesetID
-  
-  geneList[resAll[resAll[, paste0(names(cl), "_Results")] == cl, "ProbesetID"]] <- 1
-  
-  table(geneList)
-  
-  cl <- paste0(names(cl),".", cl)
-  
-  for(go in c("BP","MF","CC")){
-    # go = "BP"
-    
-    cat("Cluster:", cl, "go:", go, "\n")
-    
-    sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", cl), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
-    
-    #     print(sampleGOdata)
-    
-    result <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
-    
-    pValues <- score(result)
-    topNodes <- length(pValues)
-    
-    allRes <- GenTable(sampleGOdata, elimFisher = result, orderBy = "elimFisher", topNodes = topNodes)      
-    colnames(allRes)[6] <- "PValues" 
-    allRes$GO <- go
-    
-    
-    #     pdf(paste("PLOTS/GO_",cl, "_" ,go, ".pdf", sep=""))
-    #     showSigOfNodes(sampleGOdata, score(result), firstSigNodes = 5, useInfo = 'all')
-    #     dev.off()
-    
-    allRes$AdjPValues <- p.adjust(allRes$PValues, method = "BH")
-    
-    #     cat("#########################################################################################", fill = TRUE)
-    #     print(table(allRes$AdjPValues < 0.05))
-    #     print(head(allRes, 20))
-    #     cat("#########################################################################################", fill = TRUE)
-    
-    
-    # write.table(allRes, paste("Comp1_GO_Fisher_elim_",cl, "_", go ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-    
-    allResList[[paste0(cl, "_", go)]] <- allRes
-    
-    
-  }
-  
-}
+geneList_sign <- names(geneList[geneList != 0])
 
-
-save(allResList, file = "Comp1_GO_UpDown_Fisher_elim.rdata")
-
-
-#### save results 
-
-
-cls <- paste0(names(cls), "." ,cls)
 
 for(go in c("BP","MF","CC")){
+  # go = "BP"
+  print(go)
   
-  cl <- cls[1]
+  sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", comp_name), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
   
-  allR <- allResList[[paste0(cl, "_", go)]]
-  allAll <- allR[, c("GO.ID", "GO", "Term", "Annotated")]  
+  print(sampleGOdata)
   
-  for(cl in cls){
-    # cl = cls[1]
+  result <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
+  
+  pValues <- score(result)
+  topNodes <- length(pValues)
+  
+  allRes <- GenTable(sampleGOdata, elimFisher = result, orderBy = "elimFisher", topNodes = topNodes, numChar = 300) 
+  
+  colnames(allRes)[6] <- "PValues" 
+  
+  allRes$PValues <- as.numeric(allRes$PValues)
+  allRes$Significant <- as.numeric(allRes$Significant)
+  
+  
+  #   pdf(paste(path_plots, "GO_", go, ".pdf", sep=""))
+  #   showSigOfNodes(sampleGOdata, score(result), firstSigNodes = 5, useInfo = 'all')
+  #   dev.off()
+  #   
+  #   allRes$AdjPValues <- p.adjust(allRes$PValues, method = "BH")
+  #   
+  #   print(table(allRes$AdjPValues < 0.05))
+  #   
+  #   cat("#########################################################################################", fill = TRUE)
+  #   print(head(allRes, 20))
+  #   cat("#########################################################################################", fill = TRUE)
+  
+  
+  which_go <- which(allRes$PValues < 0.05 & allRes$Significant >= 10)
+  
+  genesInNode <- sapply(which_go, function(i){
+    # i = 1
+    goID <- allRes[i, "GO.ID"]
+    goID
     
-    allR <- allResList[[paste0(cl, "_", go)]][, c("GO.ID", "Significant", "Expected", "PValues", "AdjPValues")] 
-    ### add cluster names to columns
-    colnames(allR) <- paste0(c("", rep(paste0("CL(",cl, ")_"), 4)), colnames(allR))
+    # gt <- printGenes(sampleGOdata, whichTerms = goID, chip = affyLib)[, 1]
     
-    ### merge all results into one table
-    allAll <- merge(allAll, allR, by = "GO.ID", sort = FALSE)
+    gt <- genesInTerm(sampleGOdata, goID)[[1]]
     
-  }
+    paste0(as.character(gt[gt %in% geneList_sign]), collapse = " /// ")
+    
+    
+  })
   
   
-  write.table(allAll, paste0("Comp1_GO_UpDown_Fisher_elim_", go ,".xls"), sep="\t", row.names=F, quote = FALSE)
+  allRes$genesInNode <- "---"
+  allRes$genesInNode[which_go] <- genesInNode
+  
+  
+  #   termStat(sampleGOdata, whichGO = goID)
+  #   
+  #   pdf(paste(path_plots, "GO_", go, ".pdf", sep=""))
+  #   showGroupDensity(sampleGOdata, whichGO = goID)
+  #   dev.off()
+  
+  
+  write.table(allRes, paste0(path_results, "Comp", comp_name ,"_GO_Fisher_elim_", go ,".xls"), sep="\t", row.names=FALSE, quote = FALSE)
+  
   
 }
+
+
+###########################################################################
+#### Add GO terms to the significant genes in comparison 3c based genesInTerm - GO graph
+###########################################################################
+
+
+res_name <- "afterTreatment_matched_paired_noTechnical_"
+comp_name <- "3c"
+
+
+allLines <- readLines(paste0(path_results, "Comp", comp_name ,"_DE_results_All.xls"), n = -1)[-1]
+resAll <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+colnames(resAll) <- strsplit2(readLines(paste0(path_results, "Comp", comp_name ,"_DE_results_All.xls"), n = 1), "\t")
+
+
+resSign <- resAll[as.numeric(resAll[, paste0(res_name, "Results")]) != 0,  !grepl(".CEL", colnames(resAll))]
+
+
+
+for(go in c("BP","MF","CC")){
+  # go = "CC"
+  
+  allRes <- read.table(paste0(path_results, "Comp", comp_name ,"_GO_Fisher_elim_", go ,".xls"), header = TRUE, sep = "\t", as.is = TRUE)
+  
+  allRes <- allRes[allRes$genesInNode != "---", ]
+  
+  genesInNode_split <- strsplit(allRes$genesInNode, split = " /// ")
+  
+  names(genesInNode_split) <- allRes$Term
+  
+  
+  mysets_df <- data.frame(GO_terms = rep(names(genesInNode_split), sapply(genesInNode_split, length)), ProbesetID = unlist(genesInNode_split), row.names = NULL, stringsAsFactors = FALSE)
+  
+  
+  GO_terms <- sapply(1:nrow(resSign), function(i){
+    # i = 1
+    
+    if(!resSign$ProbesetID[i] %in% mysets_df$ProbesetID)
+      return("---")
+    
+    
+    TermsDefinition <- mysets_df[mysets_df$ProbesetID == resSign$ProbesetID[i], "GO_terms"]
+    
+    paste0(unique(TermsDefinition), collapse = " /// ")
+    
+    
+  })
+  
+  
+  
+  resSign[, paste0("GO_terms_", go)] <- GO_terms
+  
+  
+}
+
+
+write.table(resSign, file = paste0(path_results, "Comp", comp_name ,"_DE_results_Sign.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
 
 
 
 
 ###########################################################################
-#### GO analysis per control 
+#### Add GO terms to the significant genes in comparison 3c based on annotation 
+### gives less genes than shown in allRes
 ###########################################################################
 
-# source("http://bioconductor.org/biocLite.R")
-# biocLite("topGO")
-# source("http://bioconductor.org/biocLite.R")
-# biocLite("Rgraphviz")
-
-library(topGO)
-library(Rgraphviz)
+res_name <- "afterTreatment_matched_paired_noTechnical_"
+comp_name <- "3c"
 
 
-affyLib <- "mogene20sttranscriptcluster.db"
-
-### Function used to create new topGOdata object
-fun.gene.sel <- function(geneList) {
-  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
-}
-
-coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8", "CtrlBM")
-
-allResList <- list()
-
-for(coef in coefs){
-  # coef <- coefs[1]
-  
-  tt <- topTable(fit2, coef=coef, n=Inf)
-  geneList <- rep(0, nrow(tt))
-  names(geneList) <- rownames(tt)
-  geneList[tt$adj.P.Val < 0.05 & abs(tt$logFC) > 1] <- 1
-  print(table(geneList))
-  
-  for(go in c("BP","MF","CC")){
-    # go = "BP"
-    print(coef)
-    print(go)
-    sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", coef), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
-    
-    print(sampleGOdata)
-    
-    result <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
-    
-    pValues <- score(result)
-    topNodes <- length(pValues)
-    
-    allRes <- GenTable(sampleGOdata, elimFisher = result, orderBy = "elimFisher", topNodes = topNodes)      
-    colnames(allRes)[6] <- "PValues" 
-    
-    pdf(paste("PLOTS/GO_",coef, "_" ,go, ".pdf", sep=""))
-    showSigOfNodes(sampleGOdata, score(result), firstSigNodes = 5, useInfo = 'all')
-    dev.off()
-    
-    allRes$AdjPValues <- p.adjust(allRes$PValues, method = "BH")
-    
-    print(table(allRes$AdjPValues < 0.05))
-    
-    cat("#########################################################################################", fill = TRUE)
-    print(head(allRes, 20))
-    cat("#########################################################################################", fill = TRUE)
-    
-    
-    # write.table(allRes, paste("Comp1_GO_Fisher_elim_",coef, "_", go ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-    
-    allResList[[paste0(go, "_", coef)]] <- allRes
-    
-    
-  }
-  
-}
+allLines <- readLines(paste0(path_results, "Comp", comp_name ,"_DE_results_All.xls"), n = -1)[-1]
+resAll <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+colnames(resAll) <- strsplit2(readLines(paste0(path_results, "Comp", comp_name ,"_DE_results_All.xls"), n = 1), "\t")
 
 
-#### save results 
+resSign <- resAll[as.numeric(resAll[, paste0(res_name, "Results")]) != 0,  !grepl(".CEL", colnames(resAll))]
 
-for(go in c("BP","MF","CC")){
-  
-  coef <- "CtrlCD4"
-  allR <- allResList[[paste0(go, "_", coef)]]
-  colnames(allR) <- paste0(c(rep("", 3), rep(paste0(coef, "_"), 4)), colnames(allR))
-  allResList[[paste0(go, "_", coef)]] <- allR
-  
-  coef <- "CtrlCD4CD8"
-  allR <- allResList[[paste0(go, "_", coef)]][, -c(2, 3)]
-  colnames(allR) <- paste0(c("", rep(paste0(coef, "_"), 4)), colnames(allR))
-  allResList[[paste0(go, "_", coef)]] <- allR
-  
-  
-  coef <- "CtrlCD8"
-  allR <- allResList[[paste0(go, "_", coef)]][, -c(2, 3)]
-  colnames(allR) <- paste0(c("", rep(paste0(coef, "_"), 4)), colnames(allR))
-  allResList[[paste0(go, "_", coef)]] <- allR
-  
-  
-  coef <- "CtrlBM"
-  allR <- allResList[[paste0(go, "_", coef)]][, -c(2, 3)]
-  colnames(allR) <- paste0(c("", rep(paste0(coef, "_"), 4)), colnames(allR))
-  allResList[[paste0(go, "_", coef)]] <- allR
-  
-  
-  ### merge all results into one table
-  allAll <- merge(allResList[[paste0(go, "_", "CtrlCD4")]], allResList[[paste0(go, "_", "CtrlCD4CD8")]], by = "GO.ID", all = TRUE)  
-  allAll <- merge(allAll, allResList[[paste0(go, "_", "CtrlCD8")]], by = "GO.ID", all = TRUE)
-  allAll <- merge(allAll, allResList[[paste0(go, "_", "CtrlBM")]], by = "GO.ID", all = TRUE)
-  write.table(allAll, paste0("Comp1_GO_Fisher_elim_", go ,".xls"), sep="\t", row.names=F, quote = FALSE)
-  
-}
 
+### get GO terms from MSigDB
+# gene sets from MSigDB with ENTREZ IDs
+load("MSigDB_v4_0/mouse_c5_v4.rdata")
+
+mysets <- Mm.c5
+length(mysets)
+
+
+mysets_df <- data.frame(MSigDB_GO_terms = rep(names(mysets), sapply(mysets, length)), EntrezGeneID = unlist(mysets), row.names = NULL, stringsAsFactors = FALSE)
+
+EntrezGeneID <- strsplit2(resSign$EntrezGeneID, " /// ")
+
+
+MSigDB_GO_terms <- sapply(1:nrow(resSign), function(i){
+  # i = 2
+  
+  if(EntrezGeneID[i, 1] == "---")
+    return("---")
+  
+  TermsDefinition <- mysets_df$MSigDB_GO_terms[which(mysets_df$EntrezGeneID %in% EntrezGeneID[i, ])]
+  
+  if(length(TermsDefinition) == 0)
+    return("---")
+  
+  paste0(unique(TermsDefinition), collapse = " /// ")
+  
+  
+})
+
+
+# resSign$MSigDB_GO_terms <- MSigDB_GO_terms
+# 
+# 
+# write.table(resSign, file = paste0(path_results, "Comp", comp_name ,"_DE_results_Sign.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
+
+
+
+
+### get GO terms from mogene20sttranscriptcluster.db
+
+
+ls("package:mogene20sttranscriptcluster.db")
+
+x <- mogene20sttranscriptclusterGO
+# Get the manufacturer identifiers that are mapped to a GO ID
+mapped_genes <- mappedkeys(x)
+
+all(resSign$ProbesetID %in% mapped_genes)
+
+# Convert to a list
+xx <- as.list(x[mapped_genes])
+
+
+GO_terms <- sapply(1:nrow(resSign), function(i){
+  # i = 28
+  
+  if(!resSign$ProbesetID[i] %in% mapped_genes)
+    return("---")
+  
+  whichTerms <- names(xx[[resSign$ProbesetID[i]]])
+  
+  TermsDefinition <- c(topGO:::.getTermsDefinition(whichTerms, ontology = "BP", numChar = 300, multipLines = FALSE),
+                       topGO:::.getTermsDefinition(whichTerms, ontology = "CC", numChar = 300, multipLines = FALSE),
+                       topGO:::.getTermsDefinition(whichTerms, ontology = "MF", numChar = 300, multipLines = FALSE))
+  
+  TermsDefinition <- TermsDefinition[!is.na(TermsDefinition)]
+  
+  paste0(unique(TermsDefinition), collapse = " /// ")
+  
+  
+})
+
+
+# resSign$GO_terms <- GO_terms
+# 
+# 
+# write.table(resSign, file = paste0(path_results, "Comp", comp_name ,"_DE_results_Sign.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
+
+
+
+
+
+### get GO terms from mogene20sttranscriptcluster.db + child terms
+
+
+x <- mogene20sttranscriptclusterGO2ALLPROBES
+
+mapped_gos <- mappedkeys(x)
+
+# Convert to a list
+xx <- as.list(x[mapped_gos])
+
+
+mysets_df <- data.frame(GO_terms = rep(names(xx), sapply(xx, length)), ProbesetID = unlist(xx), stringsAsFactors = FALSE)
+
+
+mysets_df_tmp <- mysets_df[mysets_df$GO_terms == "GO:0002455", ]
+
+
+
+
+
+GO_terms <- sapply(1:nrow(resSign), function(i){
+  # i = 28
+  
+  if(!resSign$ProbesetID[i] %in% mysets_df$ProbesetID)
+    return("---")
+  
+  
+  whichTerms <- mysets_df$GO_terms[which(mysets_df$ProbesetID == resSign$ProbesetID[i])]
+  
+  TermsDefinition <- c(topGO:::.getTermsDefinition(whichTerms, ontology = "BP", numChar = 300, multipLines = TRUE),
+                       topGO:::.getTermsDefinition(whichTerms, ontology = "CC", numChar = 300, multipLines = TRUE),
+                       topGO:::.getTermsDefinition(whichTerms, ontology = "MF", numChar = 300, multipLines = TRUE))
+  
+  TermsDefinition <- TermsDefinition[!is.na(TermsDefinition)]
+  
+  paste0(unique(TermsDefinition), collapse = " /// ")
+  
+  
+})
+
+
+
+GO_ids <- sapply(1:nrow(resSign), function(i){
+  # i = 28
+  
+  if(!resSign$ProbesetID[i] %in% mysets_df$ProbesetID)
+    return("---")
+  
+  whichTerms <- mysets_df$GO_terms[which(mysets_df$ProbesetID == resSign$ProbesetID[i])]
+  
+  paste0(unique(whichTerms), collapse = " /// ")
+  
+  
+})
+
+
+
+
+# 
+# resSign$GO_terms_child <- GO_terms
+# resSign$GO_ids_child <- GO_ids
+# 
+# 
+# write.table(resSign, file = paste0(path_results, "Comp", comp_name ,"_DE_results_Sign.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
+
+
+
+
+
+
+
+
+
+
+
+
+###########################################################################
+#### Gene set enrichment analysis with CAMERA for C5 - GO genes sets
+# http://bioinf.wehi.edu.au/software/MSigDB/
+### comparison 3c
+###########################################################################
+
+res_name <- "afterTreatment_matched_paired_noTechnical_"
+comp_name <- "3c"
+
+load(paste0(path_results, "eset_main_org.Rdata"))
+load(paste0(path_results, "targets_org.Rdata"))
+
+targets <- targets_org
+eset_main <- eset_main_org
+
+tt <- table(targets$CellTypeShort, targets$groups)
+
+tt <- data.frame(tt, stringsAsFactors = FALSE)
+
+cell_types <- as.character(tt[tt$Var2 == "afterTreatment" & tt$Freq > 0, "Var1"])
+
+### keep only leukemia and afterTreatment samples that have matched cell type 
+samples2keep <- grepl("leukemia|afterTreatment", targets$labels) & targets$CellTypeShort %in% cell_types & !(targets$CellTypeShort == "B2M3" & targets$batch == "batch2" & targets$TypeOfReplicate == "technical")
+
+targets <- targets[samples2keep,]
+eset_main <- eset_main[, samples2keep]
+
+### sort samples by groups
+ord <- order(targets$groups, targets$CellTypeShort)
+targets <- targets[ord, ]
+eset_main <- eset_main[ ,ord]
+
+# all(sampleNames(eset_main) == strsplit2(targets$FileName, "//")[,2])
+
+
+#### design & analysis
+
+treatments <- data.frame(Treatment = as.character(targets$groups), CellType = targets$CellTypeShort)
+treatments$Treatment <- relevel(treatments$Treatment, ref = "leukemia")
+treatments
+
+
+design <- model.matrix(~ 0 + CellType + Treatment, data = treatments)
+rownames(design) <- targets$labels
+design
+
+
+# gene sets from MSigDB with ENTREZ IDs
+load("MSigDB_v4_0/mouse_c5_v4.rdata")
+
+mysets <- Mm.c5
+length(mysets)
+
+### keep the sets of interest
+intrset <- read.table("Gene_Sets/Interesting_gene_sets_C5.txt", header = FALSE, sep = ",")[, 1]
+intrset
+
+intrset <- gsub("-", " ", intrset)
+intrset <- gsub(" ", "_", intrset)
+
+intrset <- toupper(intrset)
+length(intrset)
+
+sum(names(mysets) %in% intrset)
+
+mysets <- mysets[intrset]
+
+
+# table(sapply(mysets, length))
+
+
+### Create an Index for camera
+annot <- fData(eset_main)
+# table(annot$EntrezGeneID == "---")
+
+
+EntrezGeneID <- strsplit2(annot$EntrezGeneID, " /// ")
+
+nrow <- nrow(EntrezGeneID)
+ncol <- ncol(EntrezGeneID)
+
+Index <- lapply(mysets, function(ms){  
+  eg <- matrix(EntrezGeneID %in% ms, nrow = nrow, ncol = ncol, byrow = FALSE)
+  rowSums(eg) > 0 
+})
+
+
+
+
+### run CAMERA
+
+gsea <- camera(y = eset_main, index = Index, design = design, contrast = ncol(design), trend.var = TRUE)
+head(gsea, 10)
+table(gsea$FDR < 0.05)
+
+gsea <- data.frame(GeneSet = rownames(gsea), gsea)
+
+write.table(gsea, paste(path_results, "Comp", comp_name ,"_GSEA_C5_GO_gene_sets.xls", sep=""), sep="\t", row.names=F, quote = FALSE)
 
 
 
