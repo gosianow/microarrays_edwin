@@ -1,6 +1,6 @@
 ###########################################################################
 # Created 23 Nov 2015
-# BioC 3.2
+# BioC 3.1
 
 # DE analysis of Affymetrix Mouse Gene 2.0 ST arrays (pd.mogene.2.0.st)
 # Additional replicates 
@@ -9,7 +9,7 @@
 
 ###########################################################################
 
-setwd("/Users/gosia/microarrays_edwin")
+setwd("/home/Shared/data/array/microarrays_edwin")
 
 path_plots <- "Analysis_Mouse_Rebuttal_v2/Plots/"
 path_results <- "Analysis_Mouse_Rebuttal_v2/"
@@ -24,6 +24,8 @@ library(plyr)
 library(oligo)
 library(pd.mogene.2.0.st)
 library(ggplot2)
+library(reshape2)
+library(biomaRt)
 
 
 ###########################################################################
@@ -96,6 +98,7 @@ write.table(targets, file = file.path("metadata", "targets_all.xls"), quote = FA
 
 targets_org <- targets <- read.table(file.path("metadata", "targets_all.xls"), header = TRUE, sep = "\t", comment.char = "", as.is = TRUE)
 
+head(targets)
 
 ###########################################################################
 #### import cel files
@@ -120,9 +123,11 @@ legend("topright", legend = targets$labels, col =  targets$colors, lty = 1, lwd 
 dev.off()
 
 
+
 ###########################################################################
 ### PLM normalization; create images of chips, NUSE and RLE plots
 ###########################################################################
+
 
 fitplm <- oligo::fitProbeLevelModel(x)
 
@@ -137,7 +142,6 @@ pdf(paste0(path_plots, "PreProc_RLE_fitplm.pdf"))
 par(mar = c(12, 4, 4, 2) + 0.1) # c(bottom, left, top, right), default = c(5, 4, 4, 2) + 0.1
 oligo::RLE(fitplm, col = targets$colors, names = targets$labels, las=2)
 dev.off()
-
 
 
 
@@ -193,34 +197,40 @@ ymin <- mean(ry) - rplot
 ymax <- mean(ry) + rplot
 
 
-pdf(paste0(path_plots, "MDS_all_points.pdf"), width = 5, height = 5)
 
-plot(mds$x, mds$y, pch = as.numeric(factor(targets$batch)), col = targets$colors, las = 1, cex.axis = 1, cex.lab = 1, xlab = "Leading logFC dim 1", ylab = "Leading logFC dim 2", cex = 1, xlim = c(xmin, xmax), ylim = c(ymin, ymax))
+# pdf(paste0(path_plots, "MDS_all_points.pdf"), width = 5, height = 5)
+# plot(mds$x, mds$y, pch = as.numeric(factor(targets$batch)), col = targets$colors, las = 1, cex.axis = 1, cex.lab = 1, xlab = "Leading logFC dim 1", ylab = "Leading logFC dim 2", cex = 1, xlim = c(xmin, xmax), ylim = c(ymin, ymax))
+# # text(mds$x, mds$y, labels = targets$CellTypeShort, pos = 3, offset = 0.3, cex = 0.3)
+# legend("bottomleft", legend = c("batch1", "batch2", legend$groups), pch = c(1, 2, rep(16, nrow(legend))), col = c(1, 1, legend$colors), cex = 0.8, bty = "n")
+# dev.off()
 
-# text(mds$x, mds$y, labels = targets$CellTypeShort, pos = 3, offset = 0.3, cex = 0.3)
-
-legend("bottomleft", legend = c("batch1", "batch2", legend$groups), pch = c(1, 2, rep(16, nrow(legend))), col = c(1, 1, legend$colors), cex = 0.8, bty = "n")
-
-dev.off()
 
 
 mdsdf <- data.frame(x = mds$x, y = mds$y, groups = factor(targets$groups, levels = legend$groups), batch = targets$batch, TypeOfReplicate = targets$TypeOfReplicate, CellTypeShort = targets$CellTypeShort)
 
-ggp <- ggplot(mdsdf, aes(x = x, y = y, colour = groups, shape = batch, fill = TypeOfReplicate)) +
+
+ggp <- ggplot(mdsdf, aes(x = x, y = y, colour = groups, shape = batch)) +
   theme_bw() +
   geom_point(size = 4) +
+  geom_point(data = mdsdf, aes(x = x, y = y, fill = groups, alpha = TypeOfReplicate), size = 4) +
   xlab("Leading logFC dim 1") +
   ylab("Leading logFC dim 2") +
   theme(axis.text = element_text(size = 16), axis.title = element_text(size = 16, face = "bold"), legend.text = element_text(size = 12), legend.title = element_blank(), legend.position = "right", panel.grid.major=element_blank(), panel.grid.minor=element_blank()) +
   scale_shape_manual(values = c(21, 24)) +
   scale_colour_manual(values = legend$colors) +
-  scale_fill_manual(values = c(NA, legend["afterTreatment", "colors"])) +
+  scale_fill_manual(values = legend$colors) +
+  scale_alpha_manual(values = c(0.05, 0.3)) +
   coord_cartesian(xlim = c(xmin-0.1, xmax+0.1), ylim = c(ymin-0.1, ymax+0.1))
 
 
 pdf(paste0(path_plots, "MDS_all_points_gg.pdf"), width = 8, height = 5)
 print(ggp)
 dev.off()
+
+
+
+
+
 
 
 ########## All samples with no hela 
@@ -252,15 +262,11 @@ ymin <- mean(ry) - rplot
 ymax <- mean(ry) + rplot
 
 
-pdf(paste0(path_plots, "MDS_all_noHela_points.pdf"), width = 5, height = 5)
-
-plot(mds$x, mds$y, pch = as.numeric(factor(targets$batch)), col = targets$colors, las = 1, cex.axis = 1, cex.lab = 1, xlab = "Leading logFC dim 1", ylab = "Leading logFC dim 2", cex = 1, xlim = c(xmin, xmax), ylim = c(ymin, ymax))
-
-# text(mds$x, mds$y, labels = targets$CellTypeShort, pos = 3, offset = 0.3, cex = 0.3)
-
-legend("bottomleft", legend = c("batch1", "batch2", legend$groups), pch = c(1, 2, rep(16, nrow(legend))), col = c(1, 1, legend$colors), cex = 0.8, bty = "n")
-
-dev.off()
+# pdf(paste0(path_plots, "MDS_all_noHela_points.pdf"), width = 5, height = 5)
+# plot(mds$x, mds$y, pch = as.numeric(factor(targets$batch)), col = targets$colors, las = 1, cex.axis = 1, cex.lab = 1, xlab = "Leading logFC dim 1", ylab = "Leading logFC dim 2", cex = 1, xlim = c(xmin, xmax), ylim = c(ymin, ymax))
+# # text(mds$x, mds$y, labels = targets$CellTypeShort, pos = 3, offset = 0.3, cex = 0.3)
+# legend("bottomleft", legend = c("batch1", "batch2", legend$groups), pch = c(1, 2, rep(16, nrow(legend))), col = c(1, 1, legend$colors), cex = 0.8, bty = "n")
+# dev.off()
 
 
 
@@ -271,11 +277,14 @@ mdsdf <- data.frame(x = mds$x, y = mds$y, groups = factor(targets$groups, levels
 ggp <- ggplot(mdsdf, aes(x = x, y = y, colour = groups, shape = batch)) +
   theme_bw() +
   geom_point(size = 4) +
+  geom_point(data = mdsdf, aes(x = x, y = y, fill = groups, alpha = TypeOfReplicate), size = 4) +
   xlab("Leading logFC dim 1") +
   ylab("Leading logFC dim 2") +
   theme(axis.text = element_text(size = 16), axis.title = element_text(size = 16, face = "bold"), legend.text = element_text(size = 12), legend.title = element_blank(), legend.position = "right", panel.grid.major=element_blank(), panel.grid.minor=element_blank()) +
-  scale_shape_manual(values = c(1, 2)) +
+  scale_shape_manual(values = c(21, 24)) +
   scale_colour_manual(values = legend$colors) +
+  scale_fill_manual(values = legend$colors) +
+  scale_alpha_manual(values = c(0.05, 0.3)) +
   coord_cartesian(xlim = c(xmin-0.1, xmax+0.1), ylim = c(ymin-0.1, ymax+0.1))
 
 
@@ -312,15 +321,11 @@ ymax <- mean(ry) + rplot
 
 
 
-pdf(paste0(path_plots, "MDS_all_noHela_points_zoom.pdf"), width = 5, height = 5)
-
-plot(mds$x, mds$y, pch = as.numeric(factor(targets$batch)), col = targets$colors, las = 1, cex.axis = 1, cex.lab = 1, xlab = "Leading logFC dim 1", ylab = "Leading logFC dim 2", cex = 1, xlim = c(xmin, xmax), ylim = c(ymin, ymax))
-
-text(mds$x, mds$y, labels = targets$CellTypeShort, pos = 3, offset = 0.4, cex = 0.5, col = targets$colors)
-
-legend("bottomleft", legend = c("batch1", "batch2", legend$groups), pch = c(1, 2, rep(16, nrow(legend))), col = c(1, 1, legend$colors), cex = 0.8, bty = "n")
-
-dev.off()
+# pdf(paste0(path_plots, "MDS_all_noHela_points_zoom.pdf"), width = 5, height = 5)
+# plot(mds$x, mds$y, pch = as.numeric(factor(targets$batch)), col = targets$colors, las = 1, cex.axis = 1, cex.lab = 1, xlab = "Leading logFC dim 1", ylab = "Leading logFC dim 2", cex = 1, xlim = c(xmin, xmax), ylim = c(ymin, ymax))
+# text(mds$x, mds$y, labels = targets$CellTypeShort, pos = 3, offset = 0.4, cex = 0.5, col = targets$colors)
+# legend("bottomleft", legend = c("batch1", "batch2", legend$groups), pch = c(1, 2, rep(16, nrow(legend))), col = c(1, 1, legend$colors), cex = 0.8, bty = "n")
+# dev.off()
 
 
 
@@ -330,13 +335,17 @@ mdsdf <- data.frame(x = mds$x, y = mds$y, groups = factor(targets$groups, levels
 ggp <- ggplot(mdsdf, aes(x = x, y = y, colour = groups, shape = batch)) +
   theme_bw() +
   geom_point(size = 4) +
+  geom_point(data = mdsdf, aes(x = x, y = y, fill = groups, alpha = TypeOfReplicate), size = 4) +
   xlab("Leading logFC dim 1") +
   ylab("Leading logFC dim 2") +
+  geom_text(aes(label = CellTypeShort), hjust = 1/2, vjust = -1, size = 3) +
   theme(axis.text = element_text(size = 16), axis.title = element_text(size = 16, face = "bold"), legend.text = element_text(size = 12), legend.title = element_blank(), legend.position = "right", panel.grid.major=element_blank(), panel.grid.minor=element_blank()) +
-  scale_shape_manual(values = c(1, 2)) +
+  scale_shape_manual(values = c(21, 24)) +
   scale_colour_manual(values = legend$colors) +
-  coord_cartesian(xlim = c(xmin-0.1, xmax+0.1), ylim = c(ymin-0.1, ymax+0.1)) +
-  geom_text(aes(label = CellTypeShort), hjust = 1/2, vjust = -1, size = 3)
+  scale_fill_manual(values = legend$colors) +
+  scale_alpha_manual(values = c(0.05, 0.3)) +
+  coord_cartesian(xlim = c(xmin-0.1, xmax+0.1), ylim = c(ymin-0.1, ymax+0.1))
+
 
 
 pdf(paste0(path_plots, "MDS_all_noHela_points_zoom_gg.pdf"), width = 8, height = 5)
@@ -345,22 +354,74 @@ dev.off()
 
 
 
+########## Only leukemia (pre and post treatment) samples
+
+keep_samps <- targets_org$groups %in% c("leukemia", "afterTreatment") 
+
+eset <- eset_org[, keep_samps]
+targets <- targets_org[keep_samps, ]
+
+labels <- targets$groups
+
+
+pdf(paste0(path_plots, "MDS_leukemia.pdf"), width = 5, height = 5)
+mds <- plotMDS(eset, top=1000, col = targets$colors, labels = labels, cex = 1.2)
+dev.off()
+
+
+legend <- unique(targets[, c("groups", "colors")])
+rownames(legend) <- legend$groups
+
+rx <- range(mds$x)
+ry <- range(mds$y)
+
+rplot <- max(rx[2] - rx[1], ry[2] - ry[1])/2
+
+xmin <- mean(rx) - rplot
+xmax <- mean(rx) + rplot
+ymin <- mean(ry) - rplot
+ymax <- mean(ry) + rplot
+
+
+
+mdsdf <- data.frame(x = mds$x, y = mds$y, groups = factor(targets$groups, levels = legend$groups), batch = targets$batch, TypeOfReplicate = targets$TypeOfReplicate, CellTypeShort = targets$CellTypeShort)
+
+ggp <- ggplot(mdsdf, aes(x = x, y = y, colour = groups, shape = batch)) +
+  theme_bw() +
+  geom_point(size = 4) +
+  geom_point(data = mdsdf, aes(x = x, y = y, fill = groups, alpha = TypeOfReplicate), size = 4) +
+  xlab("Leading logFC dim 1") +
+  ylab("Leading logFC dim 2") +
+  geom_text(aes(label = CellTypeShort), hjust = 1/2, vjust = -1, size = 3) +
+  theme(axis.text = element_text(size = 16), axis.title = element_text(size = 16, face = "bold"), legend.text = element_text(size = 12), legend.title = element_blank(), legend.position = "right", panel.grid.major=element_blank(), panel.grid.minor=element_blank()) +
+  scale_shape_manual(values = c(21, 24)) +
+  scale_colour_manual(values = legend$colors) +
+  scale_fill_manual(values = legend$colors) +
+  scale_alpha_manual(values = c(0.05, 0.3)) +
+  coord_cartesian(xlim = c(xmin-0.1, xmax+0.1), ylim = c(ymin-0.1, ymax+0.1))
+
+
+pdf(paste0(path_plots, "MDS_leukemia_points_gg.pdf"), width = 8, height = 5)
+print(ggp)
+dev.off()
+
 
 
 
 ###########################################################################
 ####### Do NOT keep the HeLa sample for the rest of the analysis
-####### Do NOT keep the technical replicate B2M3 after treatment batch 2
 ###########################################################################
 
 
 
-keepSAMPS <- targets_org$labels != "control_HeLa"
+keepSAMPS <- !targets_org$labels == "control_HeLa" 
 
 eset_org <- eset <- eset_org[, keepSAMPS]
 targets_org <- targets <- targets_org[keepSAMPS, ]
 
 save(targets_org, file = paste0(path_results, "targets_org.Rdata"))
+
+
 
 ###########################################################################
 ####### NetAffx Annotation with getNetAffx()
@@ -383,74 +444,6 @@ head(infoNetAffx)
 # 
 # table(is.na(fData(eset)[,"ENTREZID"]) & is.na(infoNetAffx$geneassignment))
 
-
-###########################################################################
-####### DO NOT RUN! Get annotation from NetAffx files from Affy website
-### http://www.affymetrix.com/estore/browse/level_three_category_and_children.jsp?category=35868&categoryIdClicked=35868&expand=true&parent=35617
-###########################################################################
-# source("http://bioconductor.org/biocLite.R")
-# biocLite("AffyCompatible")
-
-### Download the data 
-library(AffyCompatible)
-
-# password <- AffyCompatible:::acpassword
-
-rsrc <- NetAffxResource(user = "gosia.nowicka@uzh.ch", password = "mockIP27", directory = "NetAffx")
-
-availableArrays <- names(rsrc)
-head(availableArrays)
-
-
-availableArrays[grep("Mo", availableArrays)]
-
-
-affxDescription(rsrc[["MoGene-2_0-st-v1"]])
-
-annos <- rsrc[["MoGene-2_0-st-v1"]]
-annos
-
-
-anno <- affxAnnotation(annos)[[4]]
-anno
-
-fl <- readAnnotation(rsrc, annotation=anno, content=FALSE)
-
-
-
-
-### Check what is in there
-fl <- "NetAffx/MoGene-2_0-st-v1.na34.mm10.transcript.csv.zip"
-
-conn <- unz(fl, "MoGene-2_0-st-v1.na34.mm10.transcript.csv")
-# readLines(conn, n=20)
-
-infoNetAffx2 <- read.table(conn, header=TRUE, sep=",", as.is = TRUE)
-rownames(infoNetAffx2) <- infoNetAffx2$transcript_cluster_id
-
-dim(infoNetAffx2)
-
-apply(infoNetAffx2, 2, function(cat){sum(cat == "---")})
-
-
-
-#### compare infoNetAffx2 with infoNetAffx
-# all(infoNetAffx2$transcript_cluster_id == infoNetAffx2$probeset_id)
-# colnames(infoNetAffx) <- colnames(infoNetAffx2)
-# 
-# probesetID <- "17457722" ## probe set with no ENTREZID
-# infoNetAffx2[probesetID,]
-# infoNetAffx[probesetID,]
-# 
-# infoNetAffx2[probesetID,] == infoNetAffx[probesetID,]
-# 
-# infoNetAffx2[probesetID, "mrna_assignment"]
-# infoNetAffx[probesetID, "mrna_assignment"]
-
-
-# probesetID <- "17457722" ## probe set with no ENTREZID
-# infoNetAffx2[probesetID, "gene_assignment"]
-# geneAssi <- strsplit(infoNetAffx2$gene_assignment, " /// ")
 
 
 ###########################################################################
@@ -492,78 +485,16 @@ eset_main <- eset_main[keepCHR, ]
 
 
 ###########################################################################
-####### DO NOT USE THIS ONE. Annotation from mogene20sttranscriptcluster - has many entrez IDs missing
-###########################################################################
-# source("http://bioconductor.org/biocLite.R")
-# biocLite("mogene20sttranscriptcluster.db")
-
-
-expr <- data.frame(exprs(eset))
-
-library(mogene20sttranscriptcluster.db)
-
-### Display all mappings
-mogene20sttranscriptcluster()
-
-# I way
-annot <- data.frame(SYMBOL=sapply(contents(mogene20sttranscriptclusterSYMBOL), paste, collapse=" /// "), ENTREZID=sapply(contents(mogene20sttranscriptclusterENTREZID), paste, collapse=" /// "), stringsAsFactors = FALSE)
-colnames(annot) <- c("GeneSymbol_mogene20", "EntrezGeneID_mogene20")
-annot[annot == "NA"] <- "---"
-
-annot_mergeogene20 <- annot
-
-annot_mergeogene20 <- annot_mergeogene20[featureNames(eset_main), ]
-
-# # II way
-# probes.ALL=row.names(expr)
-# SYMBOL = unlist(mget(probes.ALL, mogene20sttranscriptclusterSYMBOL))
-# ENTREZID = unlist(mget(probes.ALL, mogene20sttranscriptclusterENTREZID))
-# 
-# 
-# ### check if it returns always one values - YES
-# mg <- mget(probes.ALL, mogene20sttranscriptclusterENTREZID)
-# table(sapply(mg, length))
-
-
-
-
-# # IV way
-# probes.ALL=row.names(expr)
-# SYMBOLb = sapply(mget(probes.ALL, mogene20sttranscriptclusterSYMBOL), paste, collapse=", ")
-# ENTREZIDb = sapply(mget(probes.ALL, mogene20sttranscriptclusterENTREZID), paste, collapse=", ")
-# 
-# all(SYMBOL == SYMBOLb)
-
-
-# # III way
-# library(annotate)
-# probes.ALL <- featureNames(eset)
-# SYMBOL <- getSYMBOL(probes.ALL,"mogene20sttranscriptcluster.db")
-
-# annot <- data.frame(SYMBOL = SYMBOL, ENTREZID = ENTREZID , stringsAsFactors = FALSE)
-# 
-# fData(eset) <- annot 
-# 
-# 
-# table(is.na(annot$ENTREZID))
-# table(is.na(annot$SYMBOL))
-# 
-# 
-# eset_org <- eset
-
-
-###########################################################################
 ####### Get annotation from formated files from Affy website (NetAffx Analysis Center)
 ### http://www.affymetrix.com/analysis/index.affx
 ###########################################################################
-
-library(limma)
 
 ###### files that are formated for easy load 
 
 
 annof <- list.files("NetAffx", pattern = ".tsv", full.names = TRUE)
 annof
+
 
 ### does not work
 # anno_list <- read.table(annof[2], header = TRUE, sep = "\t", as.is = TRUE)
@@ -678,15 +609,14 @@ annot <- gl[ featureNames(eset_main) ,c("GeneSymbol", "EntrezGeneID", "GeneTitle
 ####### Get ENSEMBL annotation using biomaRt
 ###########################################################################
 
+listMarts(host="www.ensembl.org")
 
-library(biomaRt)
 
-
-mart <- useMart("ensembl")
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", host = "www.ensembl.org")
 listDatasets(mart)
 
 
-mart <- useMart("ensembl", dataset="mmusculus_gene_ensembl")
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "mmusculus_gene_ensembl", host = "www.ensembl.org")
 
 attr <- listAttributes(mart)
 
@@ -729,9 +659,10 @@ genes$description <- strsplit2(genes$description, " \\[Source")[, 1]
 
 
 ### Merge the info about multiple genes into one string
-library(plyr)
 
-genes_merge <- plyr::ddply(genes, "affy_mogene_2_1_st_v1", summarize, GeneSymbol_Ensembl = paste0(external_gene_name, collapse = " /// "), GeneTitle_Ensembl = paste0(description, collapse = " /// "), EnsemblGeneID = paste0(ensembl_gene_id, collapse = " /// "))
+genes_merge <- plyr::ddply(genes, "affy_mogene_2_1_st_v1", plyr::summarize, GeneSymbol_Ensembl = paste0(external_gene_name, collapse = " /// "), GeneTitle_Ensembl = paste0(description, collapse = " /// "), EnsemblGeneID = paste0(ensembl_gene_id, collapse = " /// "))
+
+
 h(genes_merge)
 
 
@@ -766,7 +697,7 @@ annot_merge[is.na(annot_merge)] <- "---"
 
 
 
-all(annot_merge$ProbesetID == featureNames(eset_main))
+all(annot_merge$ProbesetID == featureNames(eset_main)) ### is FALSE
 
 
 fData(eset_main) <- annot_merge[featureNames(eset_main), ]
@@ -856,29 +787,32 @@ bgProbeInfo <- subset(probeInfo, probeInfo$type == "control->bgp->antigenomic")
 
 head(bgProbeInfo)
 
+
+
 ### see how many probes are for each GC content
 table(bgProbeInfo$gcCont)
 
 
-library(plyr)
-library(ggplot2)
-library(reshape2)
 
-bgTransInfo <- ddply(bgProbeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
+
+
+
+
+bgTransInfo <- plyr::ddply(bgProbeInfo, "transcript_cluster_id", plyr::summarize,  gcCont=mean(gcCont))
 
 
 bgdf <- data.frame(bgTransInfo, bgExpr)
 
-bgdf.m <- melt(bgdf, id.vars = c("transcript_cluster_id", "gcCont"), variable.name = "Samples", value.name = "Expression")
-head(bgdf.m)
+bgdfm <- melt(bgdf, id.vars = c("transcript_cluster_id", "gcCont"), variable.name = "Samples", value.name = "Expression")
+head(bgdfm)
 
-bgdf.m$gcCont <- factor(bgdf.m$gcCont)
+bgdfm$gcCont <- factor(bgdfm$gcCont)
 
-ggp.bg <- ggplot(data = bgdf.m, aes(x = gcCont, y = Expression)) +
+ggp.bg <- ggplot(data = bgdfm, aes(x = gcCont, y = Expression)) +
   geom_boxplot(colour = "lightcoral") +
   theme_bw()
 
-pdf(paste0(path_plots, "gc_boxplot.pdf"))
+pdf(paste0(path_plots, "PreProc_gc_boxplot.pdf"))
 print(ggp.bg)
 dev.off()
 
@@ -886,7 +820,7 @@ dev.off()
 expr <- exprs(eset_main)
 
 ### Get the GC content for all the probe sets
-transInfo <- ddply(probeInfo, "transcript_cluster_id", summarize,  gcCont=mean(gcCont))
+transInfo <- plyr::ddply(probeInfo, "transcript_cluster_id", plyr::summarize,  gcCont=mean(gcCont))
 rownames(transInfo) <- transInfo$transcript_cluster_id
 transInfo <- transInfo[rownames(expr), ]
 transInfo$gcCont <- round(transInfo$gcCont)
@@ -895,14 +829,14 @@ table(transInfo$gcCont)
 
 df <- data.frame(transInfo, expr)
 
-df.m <- melt(df, id.vars = c("transcript_cluster_id", "gcCont"), variable.name = "Samples", value.name = "Expression")
-head(df.m)
+dfm <- melt(df, id.vars = c("transcript_cluster_id", "gcCont"), variable.name = "Samples", value.name = "Expression")
+head(dfm)
 
 
-df.m$Type <- "Main"
-bgdf.m$Type <- "BGP"
+dfm$Type <- "Main"
+bgdfm$Type <- "BGP"
 
-df.all <- rbind(df.m, bgdf.m)
+df.all <- rbind(dfm, bgdfm)
 df.all$gcCont <- factor(df.all$gcCont, levels = 3:25)
 
 
@@ -911,7 +845,7 @@ ggp <- ggplot(data = df.all, aes(x = gcCont, y = Expression, fill = Type)) +
   theme_bw() +
   theme(legend.position="top")
 
-pdf(paste0(path_plots, "gc_boxplot_main_and_bgp.pdf"))
+pdf(paste0(path_plots, "PreProc_gc_boxplot_main_and_bgp.pdf"))
 print(ggp)
 dev.off()
 
@@ -954,61 +888,20 @@ eset_main_org <- eset_main
 save(eset_main_org, file = paste0(path_results, "eset_main_org.Rdata"))
 
 
-###########################################################################
-##### Multiple plot function
-###########################################################################
 
-# Multiple plot function
-#
-# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
-# - cols:   Number of columns in layout
-# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
-#
-# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
-# then plot 1 will go in the upper left, 2 will go in the upper right, and
-# 3 will go all the way across the bottom.
-#
-multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
-  require(grid)
-  
-  # Make a list from the ... arguments and plotlist
-  plots <- c(list(...), plotlist)
-  
-  numPlots = length(plots)
-  
-  # If layout is NULL, then use 'cols' to determine layout
-  if (is.null(layout)) {
-    # Make the panel
-    # ncol: Number of columns of plots
-    # nrow: Number of rows needed, calculated from # of cols
-    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
-                     ncol = cols, nrow = ceiling(numPlots/cols))
-  }
-  
-  if (numPlots==1) {
-    print(plots[[1]])
-    
-  } else {
-    # Set up the page
-    grid.newpage()
-    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
-    
-    # Make each plot, in the correct location
-    for (i in 1:numPlots) {
-      # Get the i,j matrix positions of the regions that contain this subplot
-      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
-      
-      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
-                                      layout.pos.col = matchidx$col))
-    }
-  }
-}
+
+
+
+
 
 
 ###########################################################################
-#### Comparison 1: leukemia VS. controls
-#### fitting model for all data
+#### Comparison 3b:  pre VS after treatment with matched samples + cell type
+### DO use the B2M3 technical replicate from batch 2 
 ###########################################################################
+
+res_name <- "afterTreatment_matched_paired_withTechnical_"
+comp_name <- "3b"
 
 library(oligo)
 library(pd.mogene.2.0.st)
@@ -1017,18 +910,23 @@ library(limma)
 load(paste0(path_results, "eset_main_org.Rdata"))
 load(paste0(path_results, "targets_org.Rdata"))
 
-
 targets <- targets_org
 eset_main <- eset_main_org
 
-### keep only leukemia and control CD4+, CD4+CD8+ and CD8+ and bone marrow samples
-samples2keep <- grepl("leukemia|control", targets$labels)
+tt <- table(targets$CellTypeShort, targets$groups)
+
+tt <- data.frame(tt, stringsAsFactors = FALSE)
+
+cell_types <- as.character(tt[tt$Var2 == "afterTreatment" & tt$Freq > 0, "Var1"])
+
+### keep only leukemia and afterTreatment samples that have matched cell type 
+samples2keep <- grepl("leukemia|afterTreatment", targets$labels) & targets$CellTypeShort %in% cell_types
 
 targets <- targets[samples2keep,]
 eset_main <- eset_main[, samples2keep]
 
 ### sort samples by groups
-ord <- order(targets$groups)
+ord <- order(targets$groups, targets$CellTypeShort)
 targets <- targets[ord, ]
 eset_main <- eset_main[ ,ord]
 
@@ -1037,25 +935,23 @@ eset_main <- eset_main[ ,ord]
 
 #### design & analysis
 
-treatments <- data.frame(Treatment = as.character(targets$groups))
+treatments <- data.frame(Treatment = as.character(targets$groups), CellType = targets$CellTypeShort)
+treatments$Treatment <- relevel(treatments$Treatment, ref = "leukemia")
 treatments
 
-design <- model.matrix(~ 0 + Treatment, data=treatments)
+
+design <- model.matrix(~ 0 + CellType + Treatment, data = treatments)
 rownames(design) <- targets$labels
 design
 
+
+
 fit <- lmFit(eset_main, design)
 
-contrasts <- cbind(CtrlCD4 = c(-1, 0, 0, 0, 1), CtrlCD4CD8 = c(0, -1, 0, 0, 1), CtrlCD8 = c(0, 0, -1, 0, 1), CtrlBM = c(0, 0, 0, -1, 1)) # treatment - control
-contrasts
+fit2 <- eBayes(fit[, "TreatmentafterTreatment"], trend = TRUE)
 
 
-fit2 <- contrasts.fit(fit, contrasts)
-
-fit2 <- eBayes(fit2, trend = TRUE)
-
-
-pdf(paste0(path_plots, "Comp1_plotSA_trend.pdf"))
+pdf(paste0(path_plots, "Comp", comp_name ,"_plotSA_trend.pdf"))
 plotSA(fit2)
 dev.off()
 
@@ -1065,62 +961,49 @@ results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05
 summary(results)
 
 
+colours <- unique(targets[targets$groups == "afterTreatment", "colors"])
 
-colours <- unique(targets[targets$groups != "leukemia", "colors"])
-
-pdf(paste0(path_plots, "Comp1_vennDiagram.pdf"))
+pdf(paste0(path_plots, "Comp", comp_name ,"_vennDiagram.pdf"))
 vennDiagram(results,include=c("up", "down"), circle.col=colours, counts.col=c("gold", "darkblue"))
-# vennDiagram(results,include="both", circle.col=colours, counts.col=colours)
-# vennDiagram(results,include="up", circle.col=colours, counts.col=colours)
-# vennDiagram(results,include="down", circle.col=colours, counts.col=colours)
+# vennDiagram(results,include="both", circle.col=colours, counts.col=c("gold", "darkblue"))
+# vennDiagram(results,include="up", circle.col=colours, counts.col=c("gold", "darkblue"))
+# vennDiagram(results,include="down", circle.col=colours, counts.col=c("gold", "darkblue"))
 dev.off()
 
 
 
-### save all results with nice order
-coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8", "CtrlBM")
 
-# resExpr <- round(exprs(eset_main), 2)
-# colnames(resExpr) <- paste0(treatments$Treatment, "_", colnames(resExpr))
+table <- topTable(fit2, coef = 1, n = Inf)
+
+
+### save all results with nice order
+resCoeff <- fit2$coefficients
+resT <- fit2$t
+resPValue <- fit2$p.value
+resPValueAdj <- apply(fit2$p.value, 2, p.adjust, method = "BH")
+resRes <- results[, 1]
+
+resDE <- data.frame(resCoeff, resT, resPValue, resPValueAdj, resRes)
+colnames(resDE) <- paste0(res_name, c("coeffs", "t", "PValues", "AdjPValues", "Results"))
+
+resGenes <- fit2$genes
 
 resExpr <- round(exprs(eset_main_org), 2)
 colnames(resExpr) <- paste0(targets_org$labels, "_", colnames(resExpr))
 resExpr <- resExpr[, order(colnames(resExpr))]
 
-resCoeff <- fit2$coefficients
-colnames(resCoeff) <- paste0(colnames(resCoeff), "_coeffs")
-resT <- fit2$t
-colnames(resT) <- paste0(colnames(resT), "_t")
-resPValue <- fit2$p.value
-colnames(resPValue) <- paste0(colnames(resPValue), "_PValues")
-resPValueAdj <- apply(fit2$p.value, 2, p.adjust, method = "BH")
-colnames(resPValueAdj) <- paste0(colnames(resPValueAdj), "_AdjPValues")
-resGenes <- fit2$genes
-resRes <- results
-colnames(resRes) <- paste0(colnames(resRes), "_Results")
+resAll <- cbind(resGenes, resDE, resExpr)
 
-stats <- c("coeffs", "t", "PValues", "AdjPValues", "Results")
-colOrder <- paste(rep(coefs, each = length(stats)), rep(stats, length(coefs)), sep = "_")
-
-
-resDE <- data.frame(resCoeff, resT, resPValue, resPValueAdj, resRes)[, colOrder]
-
-resAll <- cbind(resGenes, resDE,  resExpr)
-
-write.table(resAll, file = paste0(path_results, "Comp1_DE_results_All.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
-
+write.table(resAll, file = paste0(path_results, "Comp", comp_name ,"_DE_results_All.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
 
 
 
 
 ### plot MA
-pdf(paste0(path_plots, "Comp1_plotMA.pdf"))
+pdf(paste0(path_plots, "Comp", comp_name ,"_plotMA.pdf"))
 
-for(i in 1:length(coefs)){
-  coef <- coefs[i]
-  limma::plotMA(fit2, coef = coef, status = results[, coef], values = c(-1, 0, 1), col = c("red", "black", "green"), cex = c(0.7, 0.3, 0.7), main = coef)
-  abline(0,0,col="blue")
-}
+limma::plotMA(fit2, coef = 1, status = results, values = c(-1, 0, 1), col = c("red", "black", "green"), cex = c(0.7, 0.3, 0.7))
+abline(0,0,col="blue")
 
 dev.off()
 
@@ -1130,22 +1013,13 @@ dev.off()
 ### volcano plots
 library(ggplot2)
 
-coefs <- c("CtrlCD4", "CtrlCD4CD8", "CtrlCD8", "CtrlBM")
 
-gg1 <- list()
-for(i in 1:length(coefs)){
-  coef <- coefs[i] 
-  table <- topTable(fit2, coef=coef, n=Inf)
-  table$threshold = as.factor(table$adj.P.Val < 0.05 & abs(table$logFC) > 1)
-  gg1[[i]] <- ggplot(data=table, aes(x=logFC, y=-log10(P.Value), colour=threshold)) +
-    geom_point(alpha=0.4, size=1.75) + theme_bw() +ggtitle(coef) +
-    theme(legend.position = "none") +
-    xlab("log2 fold change") + ylab("-log10 p-value")
-  
-}
+table <- topTable(fit2, coef = 1, n=Inf)
+table$threshold = as.factor(table$adj.P.Val < 0.05 & abs(table$logFC) > 1)
+gg2 <- ggplot(data=table, aes(x=logFC, y=-log10(P.Value), colour=threshold)) + geom_point(alpha=0.4, size=1.75) + theme_bw() + theme(legend.position = "none") +  xlab("log2 fold change") + ylab("-log10 p-value") + ggtitle("after Treatment")
 
-pdf(paste0(path_plots, "Comp1_volcanoplot.pdf"))
-print(multiplot(plotlist = gg1, cols=2))
+pdf(paste0(path_plots, "Comp", comp_name ,"_volcanoplot.pdf"))
+print(gg2)
 dev.off()
 
 
@@ -1153,169 +1027,112 @@ dev.off()
 ### histograms of p-values and adjusted p-values
 colours <- unique(targets[targets$groups != "leukemia", "colors"])
 
-pdf(paste0(path_plots, "Comp1_hist_pvs.pdf"))
-for(i in 1:length(coefs)){
-  
-  coef <- coefs[i]  
-  table <- topTable(fit2, coef=coef, n=Inf)
-  hist(table$P.Value, breaks = 100, main = coef, xlab = "P-values", col = colours[i])
-  #hist(table$adj.P.Val, breaks = 100, main = coef, xlab = "Adjusted p-values")
-  
-}
+pdf(paste0(path_plots, "Comp", comp_name ,"_hist_pvs.pdf"))
+
+table <- topTable(fit2, coef = 1, n=Inf)
+hist(table$P.Value, breaks = 100, main = "afterTreatment", xlab = "P-values", col = colours)
+
 dev.off()
 
 
 
 
-# ### plot expression of top sign. genes/probesets
-# library(ggplot2)
-# library(reshape2)
-# 
-# topn <- 20
-# expr <- exprs(eset_main)
-# xs <- 1:ncol(expr)
-# 
-# for(i in 1:length(coefs)){
-#   # i = 1
-#   coef <- coefs[i]
-#   print(coef)
-#   
-#   tt <- topTable(fit2, coef=coef, n=Inf, p.value=0.05, lfc=1)
-#   # write.table(tt, paste0("Comp1_topTable_",coef,".xls"), quote = FALSE, sep = "\t", row.names = FALSE)
-#   
-#   ### in the report display only first gene symbol
-#   GeneSymbol <- strsplit2(head(tt[,"GeneSymbol"], topn), " /// ")[,1]
-#   GeneTitle <- paste0(substr(strsplit2(head(tt[,"GeneTitle"], topn), " /// ")[,1], 1, 30))
-#   
-#   print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(tt[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
-#   
-#   topp <- rownames(tt)[1:topn]
-#   
-#   df <- data.frame(Gene = topp, expr[topp,])
-#   df.m <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
-#   ### keep order of genes as in tt
-#   df.m$Gene <- factor(df.m$Gene, levels = topp)
-#   ### add Entrez ID to the facet labels
-#   lab.fct <- paste0(topp, "\n", strsplit2(tt[topp, "GeneSymbol"], " /// ")[,1])
-#   levels(df.m$Gene) <- lab.fct
-#   
-#   ggp <- ggplot(df.m, aes(x = Sample, y = Expression)) +  
-#     theme_bw() +
-#     theme(axis.text.x = element_text(angle = 80, hjust = 1, size = 10), plot.title = element_text(size = 16), strip.text.x = element_text(size = 10)) +
-#     scale_x_discrete(labels=targets$groups) +
-#     labs(title = coef, y = "Log2 expression") +
-#     geom_bar(stat = "identity", colour = targets$colors, fill = targets$colors) +
-#     facet_wrap(~ Gene, scales="free_y", ncol=4) 
-#   
-#   pdf(paste0(path_plots, "Comp1_topExpressionBarPlot_",coef,".pdf"), 11, 11)
-#   print(ggp)    
-#   dev.off()
-#   
-# }
+### plot expression of ALL sign. genes/probesets
+library(ggplot2)
+library(reshape2)
+
+expr <- exprs(eset_main)
+rownames(targets) <- strsplit2(targets$FileName, split = "//")[, 2] 
+
+tt <- topTable(fit2, coef = 1, n=Inf, p.value=0.05, lfc=1)
+
+write.table(tt, paste0(path_plots, "Comp", comp_name ,"_allExpression.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
 
 
-
-###########################################################################
-#### Gene set enrichment analysis with C5 - GO genes sets
-###########################################################################
-
-# gene sets from MSigDB with ENTREZ IDs
-load("MSigDB_v4_0/mouse_c5_v4.rdata")
-
-mysets <- Mm.c5
-length(mysets)
-
-### keep the sets of interest
-intrset <- read.table("Gene_Sets/Interesting_gene_sets_C5.txt", header = FALSE, sep = ",")[, 1]
-intrset
-
-intrset <- gsub("-", " ", intrset)
-intrset <- gsub(" ", "_", intrset)
-
-intrset <- toupper(intrset)
-length(intrset)
-
-sum(names(mysets) %in% intrset)
-
-mysets <- mysets[intrset]
+topn <- nrow(tt)
+top_genes <- rownames(tt)[1:topn]
 
 
-# table(sapply(mysets, length))
+df <- data.frame(Gene = top_genes, expr[top_genes,])
+dfm <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
+
+### keep order of genes as in tt
+dfm$Gene <- factor(dfm$Gene, levels = top_genes)
 
 
-### Create an Index for camera
-annot <- fData(eset_main)
-# table(annot$EntrezGeneID == "---")
+### add GeneSymbol and GeneTitle to the facet labels
+dfm$GeneFullName <- dfm$Gene
 
-### Too slow
-# EntrezGeneID <- strsplit(annot$EntrezGeneID, " /// ")
-# Index <- lapply(mysets, function(ms){sapply(EntrezGeneID, function(eg){any(eg %in% ms)})})
+GeneSymbol <- strsplit2(tt[top_genes, "GeneSymbol_Ensembl"], " /// ")[,1]
+GeneTitle <- paste0(substr(strsplit2(tt[top_genes,"GeneTitle_Ensembl"], " /// ")[,1], 1, 30))
 
-
-EntrezGeneID <- strsplit2(annot$EntrezGeneID, " /// ")
-
-nrow = nrow(EntrezGeneID)
-ncol = ncol(EntrezGeneID)
-
-Index <- lapply(mysets, function(ms){  
-  eg <- matrix(EntrezGeneID %in% ms, nrow = nrow, ncol = ncol, byrow = FALSE)
-  rowSums(eg) > 0 
-})
+levels(dfm$GeneFullName) <- paste0(top_genes, " / ", GeneSymbol, "\n", GeneTitle)
 
 
-IndexMx <- do.call(cbind, Index)
-class(IndexMx) <- "numeric"
-colnames(IndexMx) <- names(mysets)
-IndexMx <- data.frame(ProbesetID = annot$ProbesetID, IndexMx)
+dfm$groups <- factor(targets[dfm$Sample ,"groups"])
 
-resAll <- merge(resAll, IndexMx, by = "ProbesetID", sort = FALSE)
+fill_colors <- unique(targets[, c("groups", "colors")])
+rownames(fill_colors) <- fill_colors$groups
 
-write.table(resAll, file = "Comp1_DE_results_AllPlus.xls", quote = FALSE, sep = "\t", row.names = FALSE)
+fill_colors <- fill_colors[levels(dfm$groups), "colors"]
 
 
-#### design & analysis
+Genes <- levels(dfm$Gene)
+GeneFullNames <- levels(dfm$GeneFullName)
 
-treatments <- data.frame(Treatment = as.character(targets$groups))
+all(levels(dfm$Sample) == rownames(targets))
 
-design <- model.matrix(~ 0 + Treatment, data=treatments)
-rownames(design) <- targets$labels
-design
+### Order by group
+pdf(paste0(path_plots, "Comp", comp_name ,"_allExpressionBarPlot.pdf"), 4, 4)
 
-contrasts <- cbind(CtrlCD4 = c(-1, 0, 0, 0, 1), CtrlCD4CD8 = c(0, -1, 0, 0, 1), CtrlCD8 = c(0, 0, -1, 0, 1), CtrlBM = c(0, 0, 0, -1, 1)) # treatment - control
-contrasts
-
-
-
-
-### run CAMERA
-
-gsea <- list()
-
-coef <- "CtrlCD4"
-gsea.tmp <- gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=FALSE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("NGenes","Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), NGenes = gsea[[coef]][,1], gsea[[coef]][,-1])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-
-### using information from eBayes fitting: fit2
-
-pdf(paste0("PLOTS/GS_barcodeplot_",coef,".pdf"))
-
-topgs <- 1
-gsn <-rownames(gsea[[coef]])[1:topgs] 
-gss <- gsea.tmp[gsn, , drop = FALSE]
-
-for(i in 1:length(topgs)){
+for(i in 1:nlevels(dfm$Gene)){
   
-  barcodeplot(statistics = as.numeric((fit2$t[,coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Up","Down"), quantiles = c(-1,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
+  if(GeneSymbol[i] == "---" || grepl("immunoglobulin kappa", GeneTitle[i]) || grepl("predicted gene", GeneTitle[i]))
+    next
   
-  barcodeplot(statistics = as.numeric((fit2$p.value[, coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Not significant","Significant"), quantiles = c(0.05,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
+  ggp <- ggplot(dfm[dfm$Gene == Genes[i], , drop = FALSE], aes(x = Sample, y = Expression, fill = groups)) +  
+    geom_bar(stat = "identity") +
+    theme_bw() +
+    ggtitle(GeneFullNames[i]) +
+    ylab("Log2 expression") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 10), plot.title = element_text(size = 12), strip.text.x = element_text(size = 10), legend.position = "bottom", axis.title.x = element_blank(), legend.title = element_blank(), axis.title.y = element_text(face = "bold")) +
+    scale_x_discrete(labels = targets[levels(dfm$Sample), "CellTypeShort"]) +
+    scale_fill_manual(values = fill_colors)
   
+  print(ggp)   
+  
+}
+
+dev.off()
+
+
+### Order by cell type
+
+order_cell_type <- order(targets$CellTypeShort, targets$ExperimentShort, targets$batch)
+dfm$Sample <- factor(dfm$Sample, levels = rownames(targets[order_cell_type, ]))
+
+dfm$batch <- targets[match(dfm$Sample, rownames(targets)) ,"batch"]
+dfm$batch <- factor(dfm$batch)
+
+
+pdf(paste0(path_plots, "Comp", comp_name ,"_allExpressionBarPlot2.pdf"), 4, 4)
+
+for(i in 1:nlevels(dfm$Gene)){
+  
+  if(GeneSymbol[i] == "---" || grepl("immunoglobulin kappa", GeneTitle[i]) || grepl("predicted gene", GeneTitle[i]))
+    next
+  
+  ggp <- ggplot(dfm[dfm$Gene == Genes[i], , drop = FALSE], aes(x = Sample, y = Expression, fill = groups, alpha = batch)) +  
+    geom_bar(stat = "identity") +
+    theme_bw() +
+    ggtitle(GeneFullNames[i]) +
+    ylab("Log2 expression") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 10), plot.title = element_text(size = 12), strip.text.x = element_text(size = 10), legend.position = "bottom", axis.title.x = element_blank(), legend.title = element_blank(), axis.title.y = element_text(face = "bold")) +
+    scale_x_discrete(labels = targets[levels(dfm$Sample), "CellTypeShort"]) +
+    scale_fill_manual(values = fill_colors) +
+    scale_alpha_manual(values = c(1, 0.6))
+  
+  print(ggp)   
   
 }
 
@@ -1324,614 +1141,421 @@ dev.off()
 
 
 
-coef <- "CtrlCD4CD8"
-gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-coef <- "CtrlCD8"
-gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-
-coef <- "CtrlBM"
-gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
 
 
 
 
 
-### merge all results into one table
-gseaAll <- merge(gsea[["CtrlCD4"]], gsea[["CtrlCD4CD8"]], by = "GeneSet", all = TRUE)
-gseaAll <- merge(gseaAll, gsea[["CtrlCD8"]], by = "GeneSet", all = TRUE)
-gseaAll <- merge(gseaAll, gsea[["CtrlBM"]], by = "GeneSet", all = TRUE)
-write.table(gseaAll, paste("Comp1_GSEA_C5_All.xls", sep=""), sep="\t", row.names=F, quote = FALSE)
 
 
 
+### plot expression of top sign. genes/probesets
+library(ggplot2)
+library(reshape2)
 
+expr <- exprs(eset_main)
+topn <- 20
 
-# http://www.broadinstitute.org/gsea/doc/GSEAUserGuideTEXT.htm
+rownames(targets) <- strsplit2(targets$FileName, split = "//")[, 2] 
 
+tt <- topTable(fit2, coef = 1, n=Inf, p.value=0.05, lfc=1)
 
+### in the report display only first gene symbol
+GeneSymbol <- strsplit2(head(tt[,"GeneSymbol"], topn), " /// ")[,1]
+GeneTitle <- paste0(substr(strsplit2(head(tt[,"GeneTitle"], topn), " /// ")[,1], 1, 30))
 
-###########################################################################
-#### Gene set enrichment analysis with C7  Immunologic genes sets
-###########################################################################
+# print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(tt[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
 
-# gene sets from MSigDB with ENTREZ IDs
-load("MSigDB_v4_0/mouse_c7_v4.rdata")
+top_genes <- rownames(tt)[1:topn]
 
-# Mm.c7[1]
-mysets <- Mm.c7
-length(mysets)
+df <- data.frame(Gene = top_genes, expr[top_genes,])
+dfm <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
+### keep order of genes as in tt
+dfm$Gene <- factor(dfm$Gene, levels = top_genes)
+### add Entrez ID to the facet labels
+lab.fct <- paste0(top_genes, "\n", strsplit2(tt[top_genes, "GeneSymbol"], " /// ")[,1])
+levels(dfm$Gene) <- lab.fct
+dfm$groups <- targets[dfm$Sample ,"groups"]
 
-# table(sapply(mysets, length))
+fill_colors <- unique(targets[, c("groups", "colors")])
+fill_colors <- fill_colors[order(fill_colors$groups), "colors"]
 
+ggp <- ggplot(dfm, aes(x = Sample, y = Expression, fill = groups)) +  
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 10), plot.title = element_text(size = 16), strip.text.x = element_text(size = 10), legend.position = "bottom") +
+  scale_x_discrete(labels=targets$CellTypeShort) +
+  labs(y = "Log2 expression") +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ Gene, scales="free_y", ncol= 5) +
+  scale_fill_manual(values = fill_colors)
 
-### Create an Index for camera
-annot <- fData(eset_main)
-# table(annot$EntrezGeneID == "---")
-
-### Too slow
-# EntrezGeneID <- strsplit(annot$EntrezGeneID, " /// ")
-# Index <- lapply(mysets, function(ms){sapply(EntrezGeneID, function(eg){any(eg %in% ms)})})
-
-
-EntrezGeneID <- strsplit2(annot$EntrezGeneID, " /// ")
-
-nrow = nrow(EntrezGeneID)
-ncol = ncol(EntrezGeneID)
-
-Index <- lapply(mysets, function(ms){  
-  eg <- matrix(EntrezGeneID %in% ms, nrow = nrow, ncol = ncol, byrow = FALSE)
-  rowSums(eg) > 0 
-})
-
-
-# ms <- mysets[[4]]
-# eg <- matrix(EntrezGeneID %in% ms, nrow = nrow(EntrezGeneID), ncol = ncol(EntrezGeneID), byrow = FALSE)
-# apply(eg, 2, sum)
-# table(rowSums(eg) > 0)
-# 
-# table(Index[[4]])
-
-
-# ms <- c(1, 2, 3)
-# eg <- c(2, 4)
-# any(eg %in% ms)
-
-
-#### design & analysis
-
-treatments <- data.frame(Treatment = as.character(targets$groups))
-
-design <- model.matrix(~ 0 + Treatment, data=treatments)
-rownames(design) <- targets$labels
-design
-
-contrasts <- cbind(CtrlCD4 = c(-1, 0, 0, 0, 1), CtrlCD4CD8 = c(0, -1, 0, 0, 1), CtrlCD8 = c(0, 0, -1, 0, 1), CtrlBM = c(0, 0, 0, -1, 1)) # treatment - control
-contrasts
-
-
-
-
-### run CAMERA
-
-gsea <- list()
-
-coef <- "CtrlCD4"
-gsea.tmp <- gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=FALSE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("NGenes","Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), NGenes = gsea[[coef]][,1], gsea[[coef]][,-1])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-
-### using information from eBayes fitting: fit2
-
-pdf(paste0("PLOTS/GS_barcodeplot_",coef,".pdf"))
-
-topgs <- 1
-gsn <-rownames(gsea[[coef]])[1:topgs] 
-gss <- gsea.tmp[gsn, , drop = FALSE]
-
-for(i in 1:length(topgs)){
-  
-  barcodeplot(statistics = as.numeric((fit2$t[,coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Up","Down"), quantiles = c(-1,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
-  
-  barcodeplot(statistics = as.numeric((fit2$p.value[, coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Not significant","Significant"), quantiles = c(0.05,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
-  
-  
-}
-
+pdf(paste0(path_plots, "Comp", comp_name ,"_topExpressionBarPlot.pdf"), 12, 8)
+print(ggp)    
 dev.off()
 
 
 
 
-coef <- "CtrlCD4CD8"
-gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-coef <- "CtrlCD8"
-gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-
-coef <- "CtrlBM"
-gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-
-
-
-### merge all results into one table
-gseaAll <- merge(gsea[["CtrlCD4"]], gsea[["CtrlCD4CD8"]], by = "GeneSet", all = TRUE)
-gseaAll <- merge(gseaAll, gsea[["CtrlCD8"]], by = "GeneSet", all = TRUE)
-gseaAll <- merge(gseaAll, gsea[["CtrlBM"]], by = "GeneSet", all = TRUE)
-
-
-write.table(gseaAll, paste("Comp1_GSEA_C7_All.xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-
-
-
-# http://www.broadinstitute.org/gsea/doc/GSEAUserGuideTEXT.htm
-
-
-
-
 ###########################################################################
-#### Gene set enrichment analysis with Hallmark genes sets
+#### Comparison 3c:  pre VS after treatment with matched samples + cell type
+### DO NOT use the B2M3 technical replicate from batch 2 
 ###########################################################################
 
-############### Create mouse_hallmark_v5.rdata object like on WEHI web
+res_name <- "afterTreatment_matched_paired_noTechnical_"
+comp_name <- "3c"
 
-allLines <- readLines("MSigDB_v4_0/h.all.v5.0.entrez.gmt", n = -1)
 
-humanSets <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
 
-namesHS <- humanSets[, 1]
+library(oligo)
+library(pd.mogene.2.0.st)
+library(limma)
 
-Hu.hallmark <- apply(humanSets, 1, function(r){ 
-  r <- r[-c(1,2)]
-  r <- r[r != ""]
-  return(as.numeric(r))
-} )
-
-
-names(Hu.hallmark) <- namesHS
-
-### get the mouse human homology
-hom <- read.table("MSigDB_v4_0/HOM_MouseHumanSequence.txt", header = TRUE, sep = "\t")
-
-homM <- hom[hom$Common.Organism.Name == "mouse, laboratory", c("HomoloGene.ID", "EntrezGene.ID")]
-
-homH <- hom[hom$Common.Organism.Name == "human", c("HomoloGene.ID", "EntrezGene.ID")]
-
-homMatch <- merge(homH, homM, by = "HomoloGene.ID", sort = FALSE, all = TRUE) 
-
-homMatch <- homMatch[!is.na(homMatch[, 2]) & !is.na(homMatch[, 3]), ]
-
-# merge(data.frame(a = c(1, 1, 2), b = c(21, 23, 24)), data.frame(a = c(1, 1, 2, 2), b = c(31, 32, 33, 34)) , by=1, sort = FALSE, all = TRUE)
-
-
-Mm.hallmark <- lapply(Hu.hallmark, function(gs){
-  
-  unique(homMatch[homMatch[, 2] %in% gs, 3])
-  
-})
-
-
-save(Mm.hallmark, file = "MSigDB_v4_0/mouse_hallmark_v5.rdata")
-
-
-############### Create mouse_hallmark_v5.rdata object like on WEHI web
-
-
-# gene sets from MSigDB with ENTREZ IDs
-load("MSigDB_v4_0/mouse_hallmark_v5.rdata")
-
-mysets <- Mm.hallmark
-length(mysets)
-
-### keep the sets of interest
-intrset <- read.table("Gene_Sets/Interesting_gene_sets_Hallmark.txt", header = FALSE, sep = ",", as.is = TRUE)[, 1]
-intrset
-
-intrset <- gsub("-", " ", intrset)
-intrset <- gsub(" ", "_", intrset)
-
-intrset <- paste0("HALLMARK_",toupper(intrset))
-length(intrset)
-
-sum(names(mysets) %in% intrset)
-
-# intrset[!intrset %in% names(mysets)]
-
-
-mysets <- mysets[intrset]
-
-
-# table(sapply(mysets, length))
-
-
-### Create an Index for camera
-annot <- fData(eset_main)
-# table(annot$EntrezGeneID == "---")
-
-### Too slow
-# EntrezGeneID <- strsplit(annot$EntrezGeneID, " /// ")
-# Index <- lapply(mysets, function(ms){sapply(EntrezGeneID, function(eg){any(eg %in% ms)})})
-
-
-EntrezGeneID <- strsplit2(annot$EntrezGeneID, " /// ")
-
-nrow = nrow(EntrezGeneID)
-ncol = ncol(EntrezGeneID)
-
-Index <- lapply(mysets, function(ms){  
-  eg <- matrix(EntrezGeneID %in% ms, nrow = nrow, ncol = ncol, byrow = FALSE)
-  rowSums(eg) > 0 
-})
-
-
-IndexMx <- do.call(cbind, Index)
-class(IndexMx) <- "numeric"
-colnames(IndexMx) <- names(mysets)
-IndexMx <- data.frame(ProbesetID = annot$ProbesetID, IndexMx)
-
-resAll <- merge(resAll, IndexMx, by = "ProbesetID", sort = FALSE)
-
-write.table(resAll, file = "Comp1_DE_results_AllPlus.xls", quote = FALSE, sep = "\t", row.names = FALSE)
-
-
-#### design & analysis
-
-treatments <- data.frame(Treatment = as.character(targets$groups))
-
-design <- model.matrix(~ 0 + Treatment, data=treatments)
-rownames(design) <- targets$labels
-design
-
-contrasts <- cbind(CtrlCD4 = c(-1, 0, 0, 0, 1), CtrlCD4CD8 = c(0, -1, 0, 0, 1), CtrlCD8 = c(0, 0, -1, 0, 1), CtrlBM = c(0, 0, 0, -1, 1)) # treatment - control
-contrasts
-
-
-
-
-### run CAMERA
-
-gsea <- list()
-
-coef <- "CtrlCD4"
-gsea.tmp <- gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=FALSE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("NGenes","Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), NGenes = gsea[[coef]][,1], gsea[[coef]][,-1])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-
-### using information from eBayes fitting: fit2
-
-pdf(paste0("PLOTS/GS_barcodeplot_",coef,".pdf"))
-
-topgs <- 1
-gsn <-rownames(gsea[[coef]])[1:topgs] 
-gss <- gsea.tmp[gsn, , drop = FALSE]
-
-for(i in 1:length(topgs)){
-  
-  barcodeplot(statistics = as.numeric((fit2$t[,coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Up","Down"), quantiles = c(-1,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
-  
-  barcodeplot(statistics = as.numeric((fit2$p.value[, coef])), index = Index[[gsn[i]]], index2 = NULL, gene.weights = as.numeric((fit2$coefficients[, coef]))[Index[[gsn[i]]]], weights.label = "logFC", labels = c("Not significant","Significant"), quantiles = c(0.05,1), col.bars = NULL, worm = TRUE, span.worm=0.45, main = paste0(gsn[i], "\n", gss[i, "Direction"], ", FDR = ", sprintf("%.02e",gss[i, "FDR"])))
-  
-  
-}
-
-dev.off()
-
-
-
-
-coef <- "CtrlCD4CD8"
-gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-coef <- "CtrlCD8"
-gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-
-coef <- "CtrlBM"
-gsea[[coef]] <- camera(y = eset_main, index=Index, design=design, contrast=contrasts[,coef], trend.var=TRUE)
-head(gsea[[coef]], 10)
-table(gsea[[coef]]$FDR < 0.05)
-gsea[[coef]] <- gsea[[coef]][, c("Direction", "PValue", "FDR")]
-colnames(gsea[[coef]]) <- paste0(coef, "_", colnames(gsea[[coef]]))
-gsea[[coef]] <- data.frame(GeneSet = rownames(gsea[[coef]]), gsea[[coef]])
-# write.table(gsea[[coef]], paste("Comp1_GSEA_",coef ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-
-
-
-### merge all results into one table
-gseaAll <- merge(gsea[["CtrlCD4"]], gsea[["CtrlCD4CD8"]], by = "GeneSet", all = TRUE)
-gseaAll <- merge(gseaAll, gsea[["CtrlCD8"]], by = "GeneSet", all = TRUE)
-gseaAll <- merge(gseaAll, gsea[["CtrlBM"]], by = "GeneSet", all = TRUE)
-write.table(gseaAll, paste("Comp1_GSEA_Hallmark_All.xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-
-
-
-
-
-# http://www.broadinstitute.org/gsea/doc/GSEAUserGuideTEXT.htm
-
-
-
-
-###########################################################################
-### Clustering for all genes based on DE results (-1, 0, 1)
-###########################################################################
+load(paste0(path_results, "eset_main_org.Rdata"))
+load(paste0(path_results, "targets_org.Rdata"))
 
 targets <- targets_org
 eset_main <- eset_main_org
 
-### keep only leukemia and control CD4+, CD4+CD8+ and CD8+ samples
-samples2keep <- targets_org$ExperimentShort != "afterTreatment" & targets_org$labels != "control_HeLa" & targets_org$labels != "control_wholeBoneMarrow"
+tt <- table(targets$CellTypeShort, targets$groups)
+
+tt <- data.frame(tt, stringsAsFactors = FALSE)
+
+cell_types <- as.character(tt[tt$Var2 == "afterTreatment" & tt$Freq > 0, "Var1"])
+
+### keep only leukemia and afterTreatment samples that have matched cell type 
+samples2keep <- grepl("leukemia|afterTreatment", targets$labels) & targets$CellTypeShort %in% cell_types & !(targets$CellTypeShort == "B2M3" & targets$batch == "batch2" & targets$TypeOfReplicate == "technical")
 
 targets <- targets[samples2keep,]
 eset_main <- eset_main[, samples2keep]
 
 ### sort samples by groups
-ord <- order(targets$groups)
+ord <- order(targets$groups, targets$CellTypeShort)
 targets <- targets[ord, ]
 eset_main <- eset_main[ ,ord]
 
-
-expr <- exprs(eset_main)
-### normalize expression per gene
-exprNorm <- t(scale(t(expr), center = TRUE, scale = TRUE))
+# all(sampleNames(eset_main) == strsplit2(targets$FileName, "//")[,2])
 
 
+#### design & analysis
+
+treatments <- data.frame(Treatment = as.character(targets$groups), CellType = targets$CellTypeShort)
+treatments$Treatment <- relevel(treatments$Treatment, ref = "leukemia")
+treatments
 
 
-####### load the DE results
-
-## does not work 
-# resAll <- read.table("Comp1_DE_results_All.xls", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
-
-library(limma)
+design <- model.matrix(~ 0 + CellType + Treatment, data = treatments)
+rownames(design) <- targets$labels
+design
 
 
-allLines <- readLines("Comp1_DE_results_All.xls", n = -1)[-1]
-resAll <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
-colnames(resAll) <- strsplit2(readLines("Comp1_DE_results_All.xls", n = 1), "\t")
 
-resAll <- resAll[, !grepl(pattern = "CEL", colnames(resAll))]
+fit <- lmFit(eset_main, design)
 
-resAllSort <- resAll[order(resAll$CtrlCD4_PValues, resAll$CtrlCD4CD8_PValues, resAll$CtrlCD8_PValues, decreasing = FALSE), ]
-
-resAllSort$clusters <- apply(resAllSort[, c("CtrlCD4_Results", "CtrlCD4CD8_Results", "CtrlCD8_Results")], MARGIN = 1, paste, collapse = ",")
-
-resAllSort <- resAllSort[resAllSort$clusters != "0,0,0", ]
+fit2 <- eBayes(fit[, "TreatmentafterTreatment"], trend = TRUE)
 
 
-library(gtools)
+pdf(paste0(path_plots, "Comp", comp_name ,"_plotSA_trend.pdf"))
+plotSA(fit2)
+dev.off()
 
-clusters <- apply(permutations(n=3, r=3, v = c(-1, 0, 1), repeats.allowed=TRUE), MARGIN = 1, paste, collapse = ",")
-clusters <- clusters[clusters != "0,0,0"]
 
-resAllSort$clusters <- factor(resAllSort$clusters, levels = clusters)
+## with the FC cutoff
+results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=1)
+summary(results)
 
-resAllSort <- resAllSort[order(resAllSort$clusters), ]
 
-# unique(resAllSort$clusters)
+colours <- unique(targets[targets$groups == "afterTreatment", "colors"])
 
-### number of genes in clusters
-table(resAllSort$clusters)
+pdf(paste0(path_plots, "Comp", comp_name ,"_vennDiagram.pdf"))
+vennDiagram(results,include=c("up", "down"), circle.col=colours, counts.col=c("gold", "darkblue"))
+# vennDiagram(results,include="both", circle.col=colours, counts.col=c("gold", "darkblue"))
+# vennDiagram(results,include="up", circle.col=colours, counts.col=c("gold", "darkblue"))
+# vennDiagram(results,include="down", circle.col=colours, counts.col=c("gold", "darkblue"))
+dev.off()
 
 
 
 
-##### Create a heat map with all the clusters
-
-intrProbes <- as.character(resAllSort$ProbesetID)
-
-# dataHeat <- expr[intrProbes, ]
-dataHeat <- exprNorm[intrProbes, ]
-
-annotation_col <- targets[, "groups", drop = FALSE]
-rownames(annotation_col) <- colnames(dataHeat)
-
-cols <- unique(targets$colors)
-names(cols) <- unique(targets$group)
-
-annotation_colors = list(groups = cols)
-
-labels_row <- strsplit2(resAllSort$GeneSymbol, " /// ")[, 1]
-
-library(pheatmap)
+table <- topTable(fit2, coef = 1, n = Inf)
 
 
-pdf("PLOTS/heatmap_clusters.pdf", width = 7, height = 10)
+### save all results with nice order
+resCoeff <- fit2$coefficients
+resT <- fit2$t
+resPValue <- fit2$p.value
+resPValueAdj <- apply(fit2$p.value, 2, p.adjust, method = "BH")
+resRes <- results[, 1]
 
-pheatmap(dataHeat, color = colorRamps::matlab.like(100), cluster_cols = FALSE, cluster_rows = FALSE, annotation_col = annotation_col, annotation_colors = annotation_colors, labels_col = targets$groups, labels_row = rep("", nrow(dataHeat)), annotation_legend = FALSE, fontsize_row = 8, gaps_col = cumsum(table(targets$groups)), gaps_row = cumsum(table(resAllSort$clusters)),breaks =  seq(from = -4, to = 4, length.out = 101), legend_breaks = seq(from = -4, to = 4, by = 2))
+resDE <- data.frame(resCoeff, resT, resPValue, resPValueAdj, resRes)
+colnames(resDE) <- paste0(res_name, c("coeffs", "t", "PValues", "AdjPValues", "Results"))
+
+resGenes <- fit2$genes
+
+resExpr <- round(exprs(eset_main_org), 2)
+colnames(resExpr) <- paste0(targets_org$labels, "_", colnames(resExpr))
+resExpr <- resExpr[, order(colnames(resExpr))]
+
+resAll <- cbind(resGenes, resDE, resExpr)
+
+write.table(resAll, file = paste0(path_results, "Comp", comp_name ,"_DE_results_All.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
+
+
+
+
+### plot MA
+pdf(paste0(path_plots, "Comp", comp_name ,"_plotMA.pdf"))
+
+limma::plotMA(fit2, coef = 1, status = results, values = c(-1, 0, 1), col = c("red", "black", "green"), cex = c(0.7, 0.3, 0.7))
+abline(0,0,col="blue")
 
 dev.off()
 
 
 
-write.table(resAllSort, file = "Comp1_DEclusters.xls", quote = FALSE, sep = "\t", row.names = FALSE)
+
+### volcano plots
+library(ggplot2)
+
+
+table <- topTable(fit2, coef = 1, n=Inf)
+table$threshold = as.factor(table$adj.P.Val < 0.05 & abs(table$logFC) > 1)
+gg2 <- ggplot(data=table, aes(x=logFC, y=-log10(P.Value), colour=threshold)) + geom_point(alpha=0.4, size=1.75) + theme_bw() + theme(legend.position = "none") +  xlab("log2 fold change") + ylab("-log10 p-value") + ggtitle("after Treatment")
+
+pdf(paste0(path_plots, "Comp", comp_name ,"_volcanoplot.pdf"))
+print(gg2)
+dev.off()
+
+
+
+### histograms of p-values and adjusted p-values
+colours <- unique(targets[targets$groups != "leukemia", "colors"])
+
+pdf(paste0(path_plots, "Comp", comp_name ,"_hist_pvs.pdf"))
+
+table <- topTable(fit2, coef = 1, n=Inf)
+hist(table$P.Value, breaks = 100, main = "afterTreatment", xlab = "P-values", col = colours)
+
+dev.off()
 
 
 
 
-###########################################################################
-#### GO analysis per cluster 
-###########################################################################
+### plot expression of ALL sign. genes/probesets
+library(ggplot2)
+library(reshape2)
 
-# source("http://bioconductor.org/biocLite.R")
-# biocLite("topGO")
-# source("http://bioconductor.org/biocLite.R")
-# biocLite("Rgraphviz")
+expr <- exprs(eset_main)
+rownames(targets) <- strsplit2(targets$FileName, split = "//")[, 2] 
 
-library(topGO)
-library(Rgraphviz)
+tt <- topTable(fit2, coef = 1, n=Inf, p.value=0.05, lfc=1)
+
+write.table(tt, paste0(path_plots, "Comp", comp_name ,"_allExpression.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
 
 
-affyLib <- "mogene20sttranscriptcluster.db"
+topn <- nrow(tt)
+top_genes <- rownames(tt)[1:topn]
 
-### Function used to create new topGOdata object
-fun.gene.sel <- function(geneList) {
-  return(geneList <- ifelse(geneList==0, FALSE, TRUE))
+
+df <- data.frame(Gene = top_genes, expr[top_genes,])
+dfm <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
+
+### keep order of genes as in tt
+dfm$Gene <- factor(dfm$Gene, levels = top_genes)
+
+
+### add GeneSymbol and GeneTitle to the facet labels
+dfm$GeneFullName <- dfm$Gene
+
+GeneSymbol <- strsplit2(tt[top_genes, "GeneSymbol_Ensembl"], " /// ")[,1]
+GeneTitle <- paste0(substr(strsplit2(tt[top_genes,"GeneTitle_Ensembl"], " /// ")[,1], 1, 30))
+
+levels(dfm$GeneFullName) <- paste0(top_genes, " / ", GeneSymbol, "\n", GeneTitle)
+
+
+dfm$groups <- factor(targets[dfm$Sample ,"groups"])
+
+fill_colors <- unique(targets[, c("groups", "colors")])
+rownames(fill_colors) <- fill_colors$groups
+
+fill_colors <- fill_colors[levels(dfm$groups), "colors"]
+
+
+Genes <- levels(dfm$Gene)
+GeneFullNames <- levels(dfm$GeneFullName)
+
+all(levels(dfm$Sample) == rownames(targets))
+
+### Order by group
+pdf(paste0(path_plots, "Comp", comp_name ,"_allExpressionBarPlot.pdf"), 4, 4)
+
+for(i in 1:nlevels(dfm$Gene)){
+  
+  if(GeneSymbol[i] == "---" || grepl("immunoglobulin kappa", GeneTitle[i]) || grepl("predicted gene", GeneTitle[i]))
+    next
+  
+  ggp <- ggplot(dfm[dfm$Gene == Genes[i], , drop = FALSE], aes(x = Sample, y = Expression, fill = groups)) +  
+    geom_bar(stat = "identity") +
+    theme_bw() +
+    ggtitle(GeneFullNames[i]) +
+    ylab("Log2 expression") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 10), plot.title = element_text(size = 12), strip.text.x = element_text(size = 10), legend.position = "bottom", axis.title.x = element_blank(), legend.title = element_blank(), axis.title.y = element_text(face = "bold")) +
+    scale_x_discrete(labels = targets[levels(dfm$Sample), "CellTypeShort"]) +
+    scale_fill_manual(values = fill_colors)
+  
+  print(ggp)   
+  
 }
 
-### keep the clusters with at least 50 genes
-cls <- levels(resAllSort$clusters)[table(resAllSort$clusters) > 50]
+dev.off()
 
 
-allResList <- list()
+### Order by cell type
 
-for(cl in cls){
-  # cl <- cls[1]
+order_cell_type <- order(targets$CellTypeShort, targets$ExperimentShort, targets$batch)
+dfm$Sample <- factor(dfm$Sample, levels = rownames(targets[order_cell_type, ]))
+
+dfm$batch <- targets[match(dfm$Sample, rownames(targets)) ,"batch"]
+dfm$batch <- factor(dfm$batch)
+
+
+pdf(paste0(path_plots, "Comp", comp_name ,"_allExpressionBarPlot2.pdf"), 4, 4)
+
+for(i in 1:nlevels(dfm$Gene)){
+  
+  if(GeneSymbol[i] == "---" || grepl("immunoglobulin kappa", GeneTitle[i]) || grepl("predicted gene", GeneTitle[i]))
+    next
+  
+  ggp <- ggplot(dfm[dfm$Gene == Genes[i], , drop = FALSE], aes(x = Sample, y = Expression, fill = groups, alpha = batch)) +  
+    geom_bar(stat = "identity") +
+    theme_bw() +
+    ggtitle(GeneFullNames[i]) +
+    ylab("Log2 expression") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 10), plot.title = element_text(size = 12), strip.text.x = element_text(size = 10), legend.position = "bottom", axis.title.x = element_blank(), legend.title = element_blank(), axis.title.y = element_text(face = "bold")) +
+    scale_x_discrete(labels = targets[levels(dfm$Sample), "CellTypeShort"]) +
+    scale_fill_manual(values = fill_colors) +
+    scale_alpha_manual(values = c(1, 0.6))
+  
+  print(ggp)   
+  
+}
+
+dev.off()
+
+
+
+
+
+
+
+### plot expression of top sign. genes/probesets
+library(ggplot2)
+library(reshape2)
+
+expr <- exprs(eset_main)
+topn <- 20
+
+rownames(targets) <- strsplit2(targets$FileName, split = "//")[, 2] 
+
+tt <- topTable(fit2, coef = 1, n=Inf, p.value=0.05, lfc=1)
+
+### in the report display only first gene symbol
+GeneSymbol <- strsplit2(head(tt[,"GeneSymbol"], topn), " /// ")[,1]
+GeneTitle <- paste0(substr(strsplit2(head(tt[,"GeneTitle"], topn), " /// ")[,1], 1, 30))
+
+# print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(tt[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
+
+top_genes <- rownames(tt)[1:topn]
+
+df <- data.frame(Gene = top_genes, expr[top_genes,])
+dfm <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
+### keep order of genes as in tt
+dfm$Gene <- factor(dfm$Gene, levels = top_genes)
+### add Entrez ID to the facet labels
+lab.fct <- paste0(top_genes, "\n", strsplit2(tt[top_genes, "GeneSymbol"], " /// ")[,1])
+levels(dfm$Gene) <- lab.fct
+dfm$groups <- targets[dfm$Sample ,"groups"]
+
+fill_colors <- unique(targets[, c("groups", "colors")])
+fill_colors <- fill_colors[order(fill_colors$groups), "colors"]
+
+ggp <- ggplot(dfm, aes(x = Sample, y = Expression, fill = groups)) +  
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 10), plot.title = element_text(size = 16), strip.text.x = element_text(size = 10), legend.position = "bottom") +
+  scale_x_discrete(labels=targets$CellTypeShort) +
+  labs(y = "Log2 expression") +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ Gene, scales="free_y", ncol= 5) +
+  scale_fill_manual(values = fill_colors)
+
+pdf(paste0(path_plots, "Comp", comp_name ,"_topExpressionBarPlot.pdf"), 12, 8)
+print(ggp)    
+dev.off()
+
+
+
+
+
+
+###########################################################################
+#### Merge all results
+###########################################################################
+
+
+res_files <- c("Comp3b_DE_results_All.xls", "Comp3c_DE_results_All.xls")
+
+
+res_all <- lapply(1:length(res_files), function(ff){
+  # ff = 1
+  
+  allLines <- readLines(paste0(path_results, res_files[ff]), n = -1)[-1]
+  resComp <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
+  colnames(resComp) <- strsplit2(readLines(paste0(path_results, res_files[ff]), n = 1), "\t")
   
   
-  geneList <- rep(0, nrow(resAll))
-  names(geneList) <- resAll$ProbesetID
-  geneList[resAllSort[resAllSort$clusters == cl, "ProbesetID"]] <- 1
-  table(geneList)
-  
-  
-  for(go in c("BP","MF","CC")){
-    # go = "BP"
-    
-    cat("Cluster:", cl, "go:", go, "\n")
-    
-    sampleGOdata <- new("topGOdata", description = paste0("Simple session for ", cl), ontology = go, allGenes = geneList, geneSel = fun.gene.sel , nodeSize = 10, annot = annFUN.db, affyLib = affyLib)
-    
-    #     print(sampleGOdata)
-    
-    result <- runTest(sampleGOdata, algorithm = "elim", statistic = "fisher")
-    
-    pValues <- score(result)
-    topNodes <- length(pValues)
-    
-    allRes <- GenTable(sampleGOdata, elimFisher = result, orderBy = "elimFisher", topNodes = topNodes)      
-    colnames(allRes)[6] <- "PValues" 
-    allRes$GO <- go
-    
-    
-    #     pdf(paste("PLOTS/GO_",cl, "_" ,go, ".pdf", sep=""))
-    #     showSigOfNodes(sampleGOdata, score(result), firstSigNodes = 5, useInfo = 'all')
-    #     dev.off()
-    
-    allRes$AdjPValues <- p.adjust(allRes$PValues, method = "BH")
-    
-    #     cat("#########################################################################################", fill = TRUE)
-    #     print(table(allRes$AdjPValues < 0.05))
-    #     print(head(allRes, 20))
-    #     cat("#########################################################################################", fill = TRUE)
-    
-    
-    # write.table(allRes, paste("Comp1_GO_Fisher_elim_",cl, "_", go ,".xls", sep=""), sep="\t", row.names=F, quote = FALSE)
-    
-    allResList[[paste0(cl, "_", go)]] <- allRes
-    
-    
+  if(ff == 1){
+    return(resComp[, !grepl(pattern = "CEL", x = colnames(resComp))])
+  }else if(ff == length(res_files)){
+    return(resComp[, !grepl(pattern = "Gene", x = colnames(resComp))])
+  }else{
+    return(resComp[, !grepl(pattern = "Gene", x = colnames(resComp)) & !grepl(pattern = "CEL", x = colnames(resComp))])
   }
   
-}
+})
+
+lapply(res_all, colnames)
 
 
-save(allResList, file = "Comp1_GO_Clusters_Fisher_elim.rdata")
+res_all <- Reduce(function(...) merge(..., by = "ProbesetID", all=TRUE, sort = FALSE), res_all)
 
-#### save results 
+colnames(res_all)
 
-for(go in c("BP","MF","CC")){
-  
-  cl <- cls[1]
-  allR <- allResList[[paste0(cl, "_", go)]]
-  allAll <- allR[, c("GO.ID", "GO", "Term", "Annotated")]  
-  
-  for(cl in cls){
-    # cl = cls[1]
-    
-    allR <- allResList[[paste0(cl, "_", go)]][, c("GO.ID", "Significant", "Expected", "PValues", "AdjPValues")] 
-    ### add cluster names to columns
-    colnames(allR) <- paste0(c("", rep(paste0("CL(",cl, ")_"), 4)), colnames(allR))
-    
-    ### merge all results into one table
-    allAll <- merge(allAll, allR, by = "GO.ID", sort = FALSE)
-    
-  }
-  
-  
-  write.table(allAll, paste0("Comp1_GO_Clusters_Fisher_elim_", go ,".xls"), sep="\t", row.names=F, quote = FALSE)
-  
-}
+write.table(res_all, file = paste0(path_results, "CompALL_DE_results_All.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
+
+
+
+
+results <- res_all[, grepl("afterTreatment.*Results", colnames(res_all))]
+
+colnames(results) <- gsub("_Results", "", gsub(pattern = "afterTreatment_", "", colnames(results)))
+
+
+pdf(paste0(path_plots, "CompAll_afterTreatment_vennDiagram.pdf"))
+vennDiagram(results, include = c("up", "down"), counts.col = c("gold", "darkblue"), cex=c(0.7,1,0.7))
+dev.off()
+
+
+
+
+
+
+
+
 
 
 
 
 ###########################################################################
-#### GO analysis per control - up or down regulation 
+#### GO analysis per control - up and down regulation separetely
 ###########################################################################
 
 library(topGO)
@@ -2148,565 +1772,6 @@ for(go in c("BP","MF","CC")){
   write.table(allAll, paste0("Comp1_GO_Fisher_elim_", go ,".xls"), sep="\t", row.names=F, quote = FALSE)
   
 }
-
-
-
-
-
-
-###########################################################################
-#### Comparison 2: ALL pre VS ALL after treatment
-###########################################################################
-
-
-targets <- targets_org
-eset_main <- eset_main_org
-
-### keep only leukemia and afterTreatment samples
-samples2keep <- grepl("leukemia|afterTreatment", targets$labels)
-
-targets <- targets[samples2keep,]
-eset_main <- eset_main[, samples2keep]
-
-### sort samples by groups
-ord <- order(targets$groups)
-targets <- targets[ord, ]
-eset_main <- eset_main[ ,ord]
-
-# all(sampleNames(eset_main) == strsplit2(targets$FileName, "//")[,2])
-
-
-#### design & analysis
-
-treatments <- data.frame(Treatment = as.character(targets$groups))
-treatments$Treatment <- relevel(treatments$Treatment, ref = "leukemia")
-treatments
-
-
-design <- model.matrix(~Treatment, data=treatments)
-rownames(design) <- targets$labels
-design
-
-
-
-fit <- lmFit(eset_main, design)
-
-fit2 <- eBayes(fit[, "TreatmentafterTreatment"], trend = TRUE)
-
-
-pdf(paste0(path_plots, "Comp2_plotSA_trend.pdf"))
-plotSA(fit2)
-dev.off()
-
-
-## with the FC cutoff
-results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=1)
-summary(results)
-
-
-colours <- unique(targets[targets$groups == "afterTreatment", "colors"])
-
-pdf(paste0(path_plots, "Comp2_vennDiagram.pdf"))
-vennDiagram(results,include=c("up", "down"), circle.col=colours, counts.col=c("gold", "darkblue"))
-# vennDiagram(results,include="both", circle.col=colours, counts.col=c("gold", "darkblue"))
-# vennDiagram(results,include="up", circle.col=colours, counts.col=c("gold", "darkblue"))
-# vennDiagram(results,include="down", circle.col=colours, counts.col=c("gold", "darkblue"))
-dev.off()
-
-
-
-
-table <- topTable(fit2, coef = 1, n = Inf)
-
-
-### save all results with nice order
-resCoeff <- fit2$coefficients
-resT <- fit2$t
-resPValue <- fit2$p.value
-resPValueAdj <- apply(fit2$p.value, 2, p.adjust, method = "BH")
-resRes <- results[, 1]
-
-resDE <- data.frame(resCoeff, resT, resPValue, resPValueAdj, resRes)
-colnames(resDE) <- paste0("afterTreatment_all_", c("coeffs", "t", "PValues", "AdjPValues", "Results"))
-
-resGenes <- fit2$genes
-
-resExpr <- round(exprs(eset_main_org), 2)
-colnames(resExpr) <- paste0(targets_org$labels, "_", colnames(resExpr))
-resExpr <- resExpr[, order(colnames(resExpr))]
-
-resAll <- cbind(resGenes, resDE, resExpr)
-
-write.table(resAll, file = paste0(path_results, "Comp2_DE_results_All.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
-
-
-### plot MA
-pdf(paste0(path_plots, "Comp2_plotMA.pdf"))
-
-limma::plotMA(fit2, coef = 1, status = results, values = c(-1, 0, 1), col = c("red", "black", "green"), cex = c(0.7, 0.3, 0.7))
-abline(0,0,col="blue")
-
-dev.off()
-
-
-
-
-### volcano plots
-library(ggplot2)
-
-
-table <- topTable(fit2, coef = 1, n=Inf)
-table$threshold = as.factor(table$adj.P.Val < 0.05 & abs(table$logFC) > 1)
-gg2 <- ggplot(data=table, aes(x=logFC, y=-log10(P.Value), colour=threshold)) + geom_point(alpha=0.4, size=1.75) + theme_bw() + theme(legend.position = "none") +  xlab("log2 fold change") + ylab("-log10 p-value") + ggtitle("after Treatment")
-
-pdf(paste0(path_plots, "Comp2_volcanoplot.pdf"))
-print(gg2)
-dev.off()
-
-
-
-### histograms of p-values and adjusted p-values
-colours <- unique(targets[targets$groups != "leukemia", "colors"])
-
-pdf(paste0(path_plots, "Comp2_hist_pvs.pdf"))
-
-table <- topTable(fit2, coef = 1, n=Inf)
-hist(table$P.Value, breaks = 100, main = "afterTreatment", xlab = "P-values", col = colours)
-
-dev.off()
-
-
-
-
-###########################################################################
-#### Comparison 3a:  pre VS after treatment with matched samples pooled
-###########################################################################
-
-library(oligo)
-library(pd.mogene.2.0.st)
-library(limma)
-
-load(paste0(path_results, "eset_main_org.Rdata"))
-load(paste0(path_results, "targets_org.Rdata"))
-
-targets <- targets_org
-eset_main <- eset_main_org
-
-tt <- table(targets$CellTypeShort, targets$groups)
-
-tt <- data.frame(tt, stringsAsFactors = FALSE)
-
-cell_types <- as.character(tt[tt$Var2 == "afterTreatment" & tt$Freq > 0, "Var1"])
-
-### keep only leukemia and afterTreatment samples that have matched cell type 
-samples2keep <- grepl("leukemia|afterTreatment", targets$labels) & targets$CellTypeShort %in% cell_types
-
-targets <- targets[samples2keep,]
-eset_main <- eset_main[, samples2keep]
-
-### sort samples by groups
-ord <- order(targets$groups)
-targets <- targets[ord, ]
-eset_main <- eset_main[ ,ord]
-
-# all(sampleNames(eset_main) == strsplit2(targets$FileName, "//")[,2])
-
-
-#### design & analysis
-
-treatments <- data.frame(Treatment = as.character(targets$groups), CellType = targets$CellTypeShort)
-treatments$Treatment <- relevel(treatments$Treatment, ref = "leukemia")
-treatments
-
-
-design <- model.matrix(~ Treatment, data = treatments)
-rownames(design) <- targets$labels
-design
-
-
-
-fit <- lmFit(eset_main, design)
-
-fit2 <- eBayes(fit[, "TreatmentafterTreatment"], trend = TRUE)
-
-
-pdf(paste0(path_plots, "Comp3a_plotSA_trend.pdf"))
-plotSA(fit2)
-dev.off()
-
-
-## with the FC cutoff
-results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=1)
-summary(results)
-
-
-colours <- unique(targets[targets$groups == "afterTreatment", "colors"])
-
-pdf(paste0(path_plots, "Comp3a_vennDiagram.pdf"))
-vennDiagram(results,include=c("up", "down"), circle.col=colours, counts.col=c("gold", "darkblue"))
-# vennDiagram(results,include="both", circle.col=colours, counts.col=c("gold", "darkblue"))
-# vennDiagram(results,include="up", circle.col=colours, counts.col=c("gold", "darkblue"))
-# vennDiagram(results,include="down", circle.col=colours, counts.col=c("gold", "darkblue"))
-dev.off()
-
-
-
-
-table <- topTable(fit2, coef = 1, n = Inf)
-
-
-### save all results with nice order
-resCoeff <- fit2$coefficients
-resT <- fit2$t
-resPValue <- fit2$p.value
-resPValueAdj <- apply(fit2$p.value, 2, p.adjust, method = "BH")
-resRes <- results[, 1]
-
-resDE <- data.frame(resCoeff, resT, resPValue, resPValueAdj, resRes)
-colnames(resDE) <- paste0("afterTreatment_matched_pooled_", c("coeffs", "t", "PValues", "AdjPValues", "Results"))
-
-resGenes <- fit2$genes
-
-resExpr <- round(exprs(eset_main_org), 2)
-colnames(resExpr) <- paste0(targets_org$labels, "_", colnames(resExpr))
-resExpr <- resExpr[, order(colnames(resExpr))]
-
-resAll <- cbind(resGenes, resDE, resExpr)
-
-write.table(resAll, file = paste0(path_results, "Comp3a_DE_results_All.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
-
-
-
-
-### plot MA
-pdf(paste0(path_plots, "Comp3a_plotMA.pdf"))
-
-limma::plotMA(fit2, coef = 1, status = results, values = c(-1, 0, 1), col = c("red", "black", "green"), cex = c(0.7, 0.3, 0.7))
-abline(0,0,col="blue")
-
-dev.off()
-
-
-
-
-### volcano plots
-library(ggplot2)
-
-
-table <- topTable(fit2, coef = 1, n=Inf)
-table$threshold = as.factor(table$adj.P.Val < 0.05 & abs(table$logFC) > 1)
-gg2 <- ggplot(data=table, aes(x=logFC, y=-log10(P.Value), colour=threshold)) + geom_point(alpha=0.4, size=1.75) + theme_bw() + theme(legend.position = "none") +  xlab("log2 fold change") + ylab("-log10 p-value") + ggtitle("after Treatment")
-
-pdf(paste0(path_plots, "Comp3a_volcanoplot.pdf"))
-print(gg2)
-dev.off()
-
-
-
-### histograms of p-values and adjusted p-values
-colours <- unique(targets[targets$groups != "leukemia", "colors"])
-
-pdf(paste0(path_plots, "Comp3a_hist_pvs.pdf"))
-
-table <- topTable(fit2, coef = 1, n=Inf)
-hist(table$P.Value, breaks = 100, main = "afterTreatment", xlab = "P-values", col = colours)
-
-dev.off()
-
-
-
-
-### plot expression of top sign. genes/probesets
-library(ggplot2)
-library(reshape2)
-
-expr <- exprs(eset_main)
-topn <- 20
-
-rownames(targets) <- strsplit2(targets$FileName, split = "//")[, 2] 
-
-tt <- topTable(fit2, coef = 1, n=Inf, p.value=0.05, lfc=1)
-
-### in the report display only first gene symbol
-GeneSymbol <- strsplit2(head(tt[,"GeneSymbol"], topn), " /// ")[,1]
-GeneTitle <- paste0(substr(strsplit2(head(tt[,"GeneTitle"], topn), " /// ")[,1], 1, 30))
-
-# print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(tt[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
-
-topp <- rownames(tt)[1:topn]
-
-df <- data.frame(Gene = topp, expr[topp,])
-df.m <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
-### keep order of genes as in tt
-df.m$Gene <- factor(df.m$Gene, levels = topp)
-### add Entrez ID to the facet labels
-lab.fct <- paste0(topp, "\n", strsplit2(tt[topp, "GeneSymbol"], " /// ")[,1])
-levels(df.m$Gene) <- lab.fct
-df.m$groups <- targets[df.m$Sample ,"groups"]
-
-fill_colors <- unique(targets[, c("groups", "colors")])
-fill_colors <- fill_colors[order(fill_colors$groups), "colors"]
-
-ggp <- ggplot(df.m, aes(x = Sample, y = Expression, fill = groups)) +  
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 80, hjust = 1, size = 10), plot.title = element_text(size = 16), strip.text.x = element_text(size = 10)) +
-  scale_x_discrete(labels=targets$CellTypeShort) +
-  labs(y = "Log2 expression") +
-  geom_bar(stat = "identity") +
-  facet_wrap(~ Gene, scales="free_y", ncol=4) +
-  scale_fill_manual(values = fill_colors)
-
-pdf(paste0(path_plots, "Comp3a_topExpressionBarPlot.pdf"), 11, 11)
-print(ggp)    
-dev.off()
-
-
-
-###########################################################################
-#### Comparison 3b:  pre VS after treatment with matched samples + cell type
-###########################################################################
-
-library(oligo)
-library(pd.mogene.2.0.st)
-library(limma)
-
-load(paste0(path_results, "eset_main_org.Rdata"))
-load(paste0(path_results, "targets_org.Rdata"))
-
-targets <- targets_org
-eset_main <- eset_main_org
-
-tt <- table(targets$CellTypeShort, targets$groups)
-
-tt <- data.frame(tt, stringsAsFactors = FALSE)
-
-cell_types <- as.character(tt[tt$Var2 == "afterTreatment" & tt$Freq > 0, "Var1"])
-
-### keep only leukemia and afterTreatment samples that have matched cell type 
-samples2keep <- grepl("leukemia|afterTreatment", targets$labels) & targets$CellTypeShort %in% cell_types
-
-targets <- targets[samples2keep,]
-eset_main <- eset_main[, samples2keep]
-
-### sort samples by groups
-ord <- order(targets$groups)
-targets <- targets[ord, ]
-eset_main <- eset_main[ ,ord]
-
-# all(sampleNames(eset_main) == strsplit2(targets$FileName, "//")[,2])
-
-
-#### design & analysis
-
-treatments <- data.frame(Treatment = as.character(targets$groups), CellType = targets$CellTypeShort)
-treatments$Treatment <- relevel(treatments$Treatment, ref = "leukemia")
-treatments
-
-
-design <- model.matrix(~ 0 + CellType + Treatment, data = treatments)
-rownames(design) <- targets$labels
-design
-
-
-
-fit <- lmFit(eset_main, design)
-
-fit2 <- eBayes(fit[, "TreatmentafterTreatment"], trend = TRUE)
-
-
-pdf(paste0(path_plots, "Comp3b_plotSA_trend.pdf"))
-plotSA(fit2)
-dev.off()
-
-
-## with the FC cutoff
-results <- decideTests(fit2, method="separate", adjust.method="BH", p.value=0.05, lfc=1)
-summary(results)
-
-
-colours <- unique(targets[targets$groups == "afterTreatment", "colors"])
-
-pdf(paste0(path_plots, "Comp3b_vennDiagram.pdf"))
-vennDiagram(results,include=c("up", "down"), circle.col=colours, counts.col=c("gold", "darkblue"))
-# vennDiagram(results,include="both", circle.col=colours, counts.col=c("gold", "darkblue"))
-# vennDiagram(results,include="up", circle.col=colours, counts.col=c("gold", "darkblue"))
-# vennDiagram(results,include="down", circle.col=colours, counts.col=c("gold", "darkblue"))
-dev.off()
-
-
-
-
-table <- topTable(fit2, coef = 1, n = Inf)
-
-
-### save all results with nice order
-resCoeff <- fit2$coefficients
-resT <- fit2$t
-resPValue <- fit2$p.value
-resPValueAdj <- apply(fit2$p.value, 2, p.adjust, method = "BH")
-resRes <- results[, 1]
-
-resDE <- data.frame(resCoeff, resT, resPValue, resPValueAdj, resRes)
-colnames(resDE) <- paste0("afterTreatment_matched_paired_", c("coeffs", "t", "PValues", "AdjPValues", "Results"))
-
-resGenes <- fit2$genes
-
-resExpr <- round(exprs(eset_main_org), 2)
-colnames(resExpr) <- paste0(targets_org$labels, "_", colnames(resExpr))
-resExpr <- resExpr[, order(colnames(resExpr))]
-
-resAll <- cbind(resGenes, resDE, resExpr)
-
-write.table(resAll, file = paste0(path_results, "Comp3b_DE_results_All.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
-
-
-
-
-### plot MA
-pdf(paste0(path_plots, "Comp3b_plotMA.pdf"))
-
-limma::plotMA(fit2, coef = 1, status = results, values = c(-1, 0, 1), col = c("red", "black", "green"), cex = c(0.7, 0.3, 0.7))
-abline(0,0,col="blue")
-
-dev.off()
-
-
-
-
-### volcano plots
-library(ggplot2)
-
-
-table <- topTable(fit2, coef = 1, n=Inf)
-table$threshold = as.factor(table$adj.P.Val < 0.05 & abs(table$logFC) > 1)
-gg2 <- ggplot(data=table, aes(x=logFC, y=-log10(P.Value), colour=threshold)) + geom_point(alpha=0.4, size=1.75) + theme_bw() + theme(legend.position = "none") +  xlab("log2 fold change") + ylab("-log10 p-value") + ggtitle("after Treatment")
-
-pdf(paste0(path_plots, "Comp3b_volcanoplot.pdf"))
-print(gg2)
-dev.off()
-
-
-
-### histograms of p-values and adjusted p-values
-colours <- unique(targets[targets$groups != "leukemia", "colors"])
-
-pdf(paste0(path_plots, "Comp3b_hist_pvs.pdf"))
-
-table <- topTable(fit2, coef = 1, n=Inf)
-hist(table$P.Value, breaks = 100, main = "afterTreatment", xlab = "P-values", col = colours)
-
-dev.off()
-
-
-
-
-### plot expression of top sign. genes/probesets
-library(ggplot2)
-library(reshape2)
-
-expr <- exprs(eset_main)
-topn <- 20
-
-rownames(targets) <- strsplit2(targets$FileName, split = "//")[, 2] 
-
-tt <- topTable(fit2, coef = 1, n=Inf, p.value=0.05, lfc=1)
-
-### in the report display only first gene symbol
-GeneSymbol <- strsplit2(head(tt[,"GeneSymbol"], topn), " /// ")[,1]
-GeneTitle <- paste0(substr(strsplit2(head(tt[,"GeneTitle"], topn), " /// ")[,1], 1, 30))
-
-# print(data.frame(GeneSymbol = GeneSymbol, GeneTitle = GeneTitle , head(tt[, c("logFC", "AveExpr", "P.Value", "adj.P.Val")], topn)))
-
-topp <- rownames(tt)[1:topn]
-
-df <- data.frame(Gene = topp, expr[topp,])
-df.m <- reshape2::melt(df, id.vars = "Gene", value.name = "Expression", variable.name = "Sample")
-### keep order of genes as in tt
-df.m$Gene <- factor(df.m$Gene, levels = topp)
-### add Entrez ID to the facet labels
-lab.fct <- paste0(topp, "\n", strsplit2(tt[topp, "GeneSymbol"], " /// ")[,1])
-levels(df.m$Gene) <- lab.fct
-df.m$groups <- targets[df.m$Sample ,"groups"]
-
-fill_colors <- unique(targets[, c("groups", "colors")])
-fill_colors <- fill_colors[order(fill_colors$groups), "colors"]
-
-ggp <- ggplot(df.m, aes(x = Sample, y = Expression, fill = groups)) +  
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 80, hjust = 1, size = 10), plot.title = element_text(size = 16), strip.text.x = element_text(size = 10)) +
-  scale_x_discrete(labels=targets$CellTypeShort) +
-  labs(y = "Log2 expression") +
-  geom_bar(stat = "identity") +
-  facet_wrap(~ Gene, scales="free_y", ncol=4) +
-  scale_fill_manual(values = fill_colors)
-
-pdf(paste0(path_plots, "Comp3b_topExpressionBarPlot.pdf"), 11, 11)
-print(ggp)    
-dev.off()
-
-
-
-
-
-
-
-
-
-###########################################################################
-#### Merge all results
-###########################################################################
-
-
-res_files <- c("Comp1_DE_results_All.xls", "Comp2_DE_results_All.xls", "Comp3a_DE_results_All.xls", "Comp3b_DE_results_All.xls")
-
-
-res_all <- lapply(1:length(res_files), function(ff){
-  # ff = 1
-  
-  allLines <- readLines(paste0(path_results, res_files[ff]), n = -1)[-1]
-  resComp <- data.frame(strsplit2(allLines, "\t"), stringsAsFactors = FALSE)
-  colnames(resComp) <- strsplit2(readLines(paste0(path_results, res_files[ff]), n = 1), "\t")
-  
-  
-  if(ff == 1){
-    return(resComp[, !grepl(pattern = "CEL", x = colnames(resComp))])
-  }else if(ff == length(res_files)){
-    return(resComp[, !grepl(pattern = "Gene", x = colnames(resComp))])
-  }else{
-    return(resComp[, !grepl(pattern = "Gene", x = colnames(resComp)) & !grepl(pattern = "CEL", x = colnames(resComp))])
-  }
-  
-})
-
-lapply(res_all, colnames)
-
-
-res_all <- Reduce(function(...) merge(..., by = "ProbesetID", all=TRUE, sort = FALSE), res_all)
-
-colnames(res_all)
-
-write.table(res_all, file = paste0(path_results, "CompALL_DE_results_All.xls"), quote = FALSE, sep = "\t", row.names = FALSE)
-
-
-
-
-results <- res_all[, grepl("afterTreatment.*Results", colnames(res_all))]
-
-colnames(results) <- gsub("_Results", "", gsub(pattern = "afterTreatment_", "", colnames(results)))
-
-
-pdf(paste0(path_plots, "CompAll_afterTreatment_vennDiagram.pdf"))
-vennDiagram(results, include = c("up", "down"), counts.col = c("gold", "darkblue"))
-dev.off()
-
-
-
-
-
-
-
-
-
 
 
 
